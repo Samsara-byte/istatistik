@@ -1,27 +1,28 @@
-# Bağımlılıklar
-node_modules/
-.pnp
-.pnp.js
-
-# Build çıktıları
-.next/
-out/
-build/
-
-# Debug ve Loglar
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# Çevresel Değişkenler (Çok Önemli!)
+# --- Python (FastAPI) ---
+__pycache__/
+*.py[cod]
+*$py.class
 .env
+.venv
+env/
+venv/
+ENV/
+build/
+dist/
+
+# --- JavaScript / TypeScript (Vite) ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Vite spesifik env dosyaları
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-*.env.local
 
-# Sistem dosyaları
+# --- Genel Dosyalar ---
 .DS_Store
-Thumbs.db
+.vscode/
+.idea/

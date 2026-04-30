@@ -1,0 +1,16 @@
+docker run --name burdurdb -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=burdurdb -p 5432:5432 -v C:\Users\sami.aslancan\pgdata:/var/lib/postgresql -d postgres:latest
+
+
+
+python -m venv .venv
+.venv\Scripts\activate
+
+
+409 hatası = bu dosya daha önce yüklenmiş, import_log tablosunda hash'i kayıtlı.
+Import log'u temizle:
+docker exec -it burdurdb psql -U postgres -d burdurdb -c "DELETE FROM import_log;"
+
+veritabanı kaydedilen yer "C:\\Users\\sami.aslancan\\pgdata:/var/lib/postgresql"
+şifre burdur15
+database ismi burdurdb
+docker desktop üzerinden görülebilir. docker üzerinden kontrol ediyorum ve açıyorum

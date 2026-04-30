@@ -1,10 +1,3 @@
-benim köyler json dosyamda sadece köyler var ama mesela ağlasun kum/sakarca mahalle olarak geçiyor ve çks sisteminde var bunları da eklemem gerekiyor mu yani mahallelerde neler eklemeliyim.
-
-çiğ süt te hangi veriler eklenecek bilmediğimden eklemedim.
-
-desteklemeler gelmesini beklieceğim 
-su ürünleri gıda denetimleri gelmesini bekleyeceğim
-
-bir dosyanın aynı dosyanın iki kere import edilmesini engelleme yapacağım isimden değil başka bir yol olacak
-
-dosyalar ne sıklık ile yüklenecek buna göre tabloda nelerin değişikliği olsun hangi veri de tutulsun hangi veri de değiştirilsin 
+bütün database mantığı tekrar elden geçirilecek
+ekleme modülü daha düzenli ve ayralı olacak
+bazı sayfalarda harita var bazılarında yok sayfaları gözden geçir

@@ -7,25 +7,71 @@ import re
 import time
 import hashlib
 import struct as _s
+import traceback
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Query, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 import openpyxl
 import os
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/burdurdb")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:burdur15@localhost:5432/burdurdb")
+
+print("=" * 60)
+print("🚀  Burdur Tarım API başlatılıyor...")
+print(f"📌  DATABASE_URL: {DATABASE_URL}")
+print("=" * 60)
 
 engine = None
 
+def _ensure_database_exists(db_url: str) -> None:
+    """
+    Hedef veritabanı yoksa oluşturur.
+    Önce postgres sistem DB'sine bağlanır, burdurdb yoksa CREATE DATABASE yapar.
+    """
+    # URL'den DB adını ayır  →  .../postgres şeklinde sistem DB URL'i oluştur
+    try:
+        base_url, db_name = db_url.rsplit("/", 1)
+        # psycopg2 driverını koru: postgresql+psycopg2://...  →  aynı prefix
+        sys_url = base_url + "/postgres"
+        print(f"🔍  Sistem DB'ye bağlanılıyor: {sys_url}")
+
+        sys_engine = create_engine(sys_url, isolation_level="AUTOCOMMIT")
+        with sys_engine.connect() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": db_name}
+            ).scalar()
+
+            if exists:
+                print(f"✅  Veritabanı '{db_name}' zaten mevcut.")
+            else:
+                print(f"⚠️   Veritabanı '{db_name}' bulunamadı → oluşturuluyor...")
+                conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+                print(f"✅  Veritabanı '{db_name}' oluşturuldu.")
+        sys_engine.dispose()
+    except Exception as e:
+        print(f"❌  _ensure_database_exists HATA: {e}")
+        traceback.print_exc()
+        raise
+
+
 def init_engine():
     global engine
-    engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True)
+    print("🔧  SQLAlchemy engine oluşturuluyor...")
+    try:
+        engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True)
+        print("✅  Engine oluşturuldu.")
+    except Exception as e:
+        print(f"❌  Engine oluşturma HATASI: {e}")
+        traceback.print_exc()
+        raise
 
 # ═══════════════════════════════════════════════════════════
 # TABLOLAR
@@ -173,16 +219,60 @@ INDEXES_SQL = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_engine()
-    with engine.connect() as c:
-        for sql in TABLES_SQL:
-            c.execute(text(sql))
-        for sql in INDEXES_SQL:
-            c.execute(text(sql))
-        c.commit()
-    print("✅  DB hazır")
+    # ── 1. Veritabanını oluştur (yoksa) ──────────────────────
+    print("\n── ADIM 1: Veritabanı varlık kontrolü ──")
+    try:
+        _ensure_database_exists(DATABASE_URL)
+    except Exception as e:
+        print(f"❌  Veritabanı oluşturulamadı, uygulama durduruluyor: {e}")
+        raise
+
+    # ── 2. Engine başlat ──────────────────────────────────────
+    print("\n── ADIM 2: Engine başlatma ──")
+    try:
+        init_engine()
+    except Exception as e:
+        print(f"❌  Engine başlatılamadı: {e}")
+        raise
+
+    # ── 3. Bağlantı testi ────────────────────────────────────
+    print("\n── ADIM 3: Bağlantı testi ──")
+    try:
+        with engine.connect() as c:
+            c.execute(text("SELECT 1"))
+        print("✅  PostgreSQL bağlantısı başarılı.")
+    except OperationalError as e:
+        print(f"❌  PostgreSQL bağlantı HATASI: {e}")
+        traceback.print_exc()
+        raise
+
+    # ── 4. Tabloları ve indeksleri oluştur ───────────────────
+    print(f"\n── ADIM 4: {len(TABLES_SQL)} tablo + {len(INDEXES_SQL)} indeks oluşturuluyor ──")
+    try:
+        with engine.connect() as c:
+            for i, sql in enumerate(TABLES_SQL, 1):
+                tablo_adi = sql.split("EXISTS")[1].split("(")[0].strip()
+                print(f"  [{i}/{len(TABLES_SQL)}] Tablo kontrol/oluştur: {tablo_adi}")
+                c.execute(text(sql))
+            for i, sql in enumerate(INDEXES_SQL, 1):
+                idx_adi = sql.split("EXISTS")[1].split(" ON")[0].strip()
+                print(f"  [{i}/{len(INDEXES_SQL)}] İndeks kontrol/oluştur: {idx_adi}")
+                c.execute(text(sql))
+            c.commit()
+        print("✅  Tüm tablolar ve indeksler hazır.")
+    except Exception as e:
+        print(f"❌  Tablo/indeks oluşturma HATASI: {e}")
+        traceback.print_exc()
+        raise
+
+    print("\n" + "=" * 60)
+    print("✅  DB hazır — API istekleri kabul ediliyor.")
+    print("=" * 60 + "\n")
     yield
+
+    print("\n🛑  Uygulama kapanıyor, engine dispose ediliyor...")
     engine.dispose()
+    print("✅  Engine kapatıldı.")
 
 # ═══════════════════════════════════════════════════════════
 # APP
@@ -979,3 +1069,11 @@ async def import_bitkisel(file: UploadFile=File(...), yil: Optional[str]=Form(No
 def health():
     with engine.connect() as c: c.execute(text("SELECT 1"))
     return {"status":"healthy"}
+
+
+# ═══════════════════════════════════════════════════════════
+# DOĞRUDAN ÇALIŞTIRMA  →  python main.py
+# ═══════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
