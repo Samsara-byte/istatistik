@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Header from '@/components/Header'
 import TopNav from '@/components/TopNav'
 import Sidebar from '@/components/Sidebar'
@@ -113,10 +113,39 @@ export default function App() {
   const { state, switchModule, switchPage, pickDistrict, pickVillage } = useAppState()
   const [footerDate, setFooterDate] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
     setFooterDate(new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }))
   }, [])
+
+  // Ekran boyutunu takip et
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+
+  // Sayfa değişince drawer kapansın
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [state.activePage])
+
+  // ESC tuşu ile drawer kapansın
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSidebarOpen(false)
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [])
+
+  const handleSwitchModule = useCallback((mod: ModuleKey) => {
+    switchModule(mod)
+    setSidebarOpen(false)
+  }, [switchModule])
 
   const mp: MP = {
     pageId: state.activePage,
@@ -152,24 +181,32 @@ export default function App() {
     }
   }
 
+  const showSidebar = state.activeModule !== 'bilginotu'
+
   return (
     <>
-      <Header />
+      <Header
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(o => !o)}
+        showHam={showSidebar && isMobile}
+      />
       <TopNav
         activeModule={state.activeModule}
         activePage={state.activePage}
-        onSwitchModule={(mod: ModuleKey) => switchModule(mod)}
+        onSwitchModule={handleSwitchModule}
         onOpenImport={() => setShowImport(true)}
       />
       <div className="app">
-        {state.activeModule !== 'bilginotu' && (
+        {showSidebar && (
           <Sidebar
             activeModule={state.activeModule}
             activePage={state.activePage}
             onSwitchPage={switchPage}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
           />
         )}
-        <main style={state.activeModule === 'bilginotu' ? { width: '100%' } : undefined}>
+        <main style={!showSidebar ? { width: '100%' } : undefined}>
           <div className="page on">{renderPage()}</div>
         </main>
       </div>

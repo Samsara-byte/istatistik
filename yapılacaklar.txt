@@ -1,3 +1,6 @@
-bütün database mantığı tekrar elden geçirilecek
-ekleme modülü daha düzenli ve ayralı olacak
 bazı sayfalarda harita var bazılarında yok sayfaları gözden geçir
+gida yemin istatiği entegresi
+su ürünleri istatistik entegresi
+muhtarlar entegresi
+köy nufus entegresi
+database in ve yeni entegre yapılacağıı zaman neler yapılacağının hangi fonksiyon ne işe yaradığının dokumantasyonunu oluştur

@@ -1,12 +1,30 @@
 import { useEffect, useState } from 'react'
 
-export default function Header() {
+interface Props {
+  sidebarOpen: boolean
+  onToggleSidebar: () => void
+  showHam: boolean
+}
+
+export default function Header({ sidebarOpen, onToggleSidebar, showHam }: Props) {
   const [dateStr, setDateStr] = useState('')
   useEffect(() => {
-    setDateStr(new Date().toLocaleDateString('tr-TR', { day:'2-digit', month:'long', year:'numeric' }))
+    setDateStr(new Date().toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' }))
   }, [])
+
   return (
     <header>
+      {showHam && (
+        <button
+          className={`ham-btn${sidebarOpen ? ' open' : ''}`}
+          onClick={onToggleSidebar}
+          aria-label="Menüyü aç/kapat"
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+      )}
       <div className="hlogo">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(74,170,114,.25)" />
