@@ -23,6 +23,7 @@ from app.excel import (
     parse_kooperatif_xls,
     parse_ozet_xls,
     parse_planli_uretim_xls,
+    parse_sertifikali_fidan_xls,
     parse_sut_xlsx,
     parse_uretim_xlsx,
 )
@@ -462,7 +463,7 @@ async def import_planli_uretim(
     await _guard_duplicate(db, file_hash, file.filename or "")
 
     final_yil          = yil_from(yil, file.filename or "")
-    rows, il_adi, ilce_adi = parse_planli_uretim_xls(content, final_yil)
+    rows, il_adi, ilce_adi, _toplam = parse_planli_uretim_xls(content, final_yil)
     if not rows:
         raise NoValidDataError()
 
@@ -524,4 +525,92 @@ async def import_planli_uretim(
         "guncellenen": guncellenen,
         "silinen": silinen,
         "sure_sn": sure,
+    }
+
+
+# ── Sertifikalı Fidan Kullanım Desteği ───────────────────────────────
+
+@router.post("/sertifikali-fidan")
+async def import_sertifikali_fidan(
+    file:     UploadFile    = File(...),
+    yil:      Optional[str] = Form(None),
+    truncate: Optional[str] = Form("false"),
+    db:       AsyncSession  = Depends(get_db),
+):
+    """
+    İCMAL-2 formatındaki Sertifikalı Fidan Kullanım Desteği XLS dosyasını yükler.
+    UNIQUE (yil, ilce, koy, fidan_turu) çakışmasında upsert yapar.
+    """
+    check_extension(file.filename or "", {"xls", "xlsx", "xlsm"})
+    content   = await file.read()
+    file_hash = sha256(content)
+    await _guard_duplicate(db, file_hash, file.filename or "")
+
+    final_yil          = yil_from(yil, file.filename or "")
+    rows, il_adi, ilce_adi, _toplam = parse_sertifikali_fidan_xls(content, final_yil)
+    if not rows:
+        raise NoValidDataError()
+
+    t0 = time.perf_counter()
+    eklenen = guncellenen = silinen = 0
+
+    async with db.begin_nested():
+        if truncate != "false" and ilce_adi:
+            r = await db.execute(
+                text("DELETE FROM sertifikali_fidan_destek WHERE yil = :y AND ilce = :i"),
+                {"y": final_yil, "i": ilce_adi},
+            )
+            silinen = r.rowcount
+        elif truncate != "false":
+            r = await db.execute(
+                text("DELETE FROM sertifikali_fidan_destek WHERE yil = :y"),
+                {"y": final_yil},
+            )
+            silinen = r.rowcount
+
+        for row in rows:
+            result = await db.execute(
+                text("""
+                    INSERT INTO sertifikali_fidan_destek
+                        (yil, il, ilce, koy, fidan_turu,
+                         kisi_sayisi, fidan_sayisi,
+                         sertifikali_alan_da, standart_alan_da,
+                         destekleme_alani_da, destekleme_tutari_tl, updated_at)
+                    VALUES
+                        (:yil, :il, :ilce, :koy, :fidan_turu,
+                         :kisi_sayisi, :fidan_sayisi,
+                         :sertifikali_alan_da, :standart_alan_da,
+                         :destekleme_alani_da, :destekleme_tutari_tl, NOW())
+                    ON CONFLICT (yil, ilce, koy, fidan_turu) DO UPDATE SET
+                        kisi_sayisi           = EXCLUDED.kisi_sayisi,
+                        fidan_sayisi          = EXCLUDED.fidan_sayisi,
+                        sertifikali_alan_da   = EXCLUDED.sertifikali_alan_da,
+                        standart_alan_da      = EXCLUDED.standart_alan_da,
+                        destekleme_alani_da   = EXCLUDED.destekleme_alani_da,
+                        destekleme_tutari_tl  = EXCLUDED.destekleme_tutari_tl,
+                        updated_at            = NOW()
+                """),
+                row,
+            )
+            if result.rowcount == 1:
+                eklenen += 1
+            else:
+                guncellenen += 1
+
+        sure = round(time.perf_counter() - t0, 2)
+        await write_import_log(
+            db, dosya_adi=file.filename or "", dosya_hash=file_hash,
+            ilce=ilce_adi or None, yil=final_yil,
+            kayit_sayisi=len(rows), silinen=silinen, sure_sn=sure,
+        )
+
+    await db.commit()
+    return {
+        "ok":          True,
+        "yil":         final_yil,
+        "ilce":        ilce_adi,
+        "eklenen":     eklenen,
+        "guncellenen": guncellenen,
+        "silinen":     silinen,
+        "sure_sn":     sure,
     }

@@ -28,7 +28,7 @@ from app.config import settings
 from app.database import close_db, engine, init_db
 
 # Tüm router'lar tek tek import edilir
-from app.routers import bitkisel, cks, destekler, hayvancilik, imports, kooperatif, planli_uretim, sut, uretim
+from app.routers import bitkisel, cks, destekler, hayvancilik, imports, kooperatif, planli_uretim, sertifikali_fidan, sut, uretim
 
 # ── Loglama ──────────────────────────────────────────────────────────
 # settings.DEBUG=True → DEBUG, False → INFO seviyesi
@@ -104,6 +104,7 @@ for _router in (
     destekler.router,
     bitkisel.router,
     planli_uretim.router,
+    sertifikali_fidan.router,
     cks.router,
     imports.router,
 ):

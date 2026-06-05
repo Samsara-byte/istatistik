@@ -712,7 +712,7 @@ def parse_planli_uretim_xls(content: bytes, yil: int) -> tuple[list[dict], str, 
     """
     cells = _read_xls_cells(content)
     if not cells:
-        return [], "", ""
+        return [], "", "", {}
 
     max_row = max(r for r, _ in cells)
     max_col = max(c for _, c in cells)
@@ -723,12 +723,19 @@ def parse_planli_uretim_xls(content: bytes, yil: int) -> tuple[list[dict], str, 
     for r in range(min(25, max_row)):
         for c in range(min(5, max_col + 1)):
             raw = str(cells.get((r, c), "") or "").strip()
-            # Büyük harfe çevirerek karşılaştır (Türkçe güvenli)
-            ru = raw.replace("İ", "I").replace("ı", "I").upper()
-            if ru.startswith("IL:") and "ILCE" not in ru and "İLÇE" not in ru:
-                il_adi = raw.split(":", 1)[1].strip().upper().replace("İ", "I").replace("ı", "I")
-            elif ru.startswith("ILCE:") or raw.upper().startswith("İLÇE:"):
-                ilce_adi = raw.split(":", 1)[1].strip().upper().replace("İ", "I").replace("ı", "I")
+            # Tüm Türkçe harfleri ASCII'ye normalize ederek karşılaştır
+            ru = (raw
+                  .replace("İ", "I").replace("ı", "I")
+                  .replace("Ş", "S").replace("ş", "s")
+                  .replace("Ç", "C").replace("ç", "c")
+                  .replace("Ğ", "G").replace("ğ", "g")
+                  .replace("Ü", "U").replace("ü", "u")
+                  .replace("Ö", "O").replace("ö", "o")
+                  .upper().replace(" ", ""))
+            if ru.startswith("IL:") and "ILCE" not in ru:
+                il_adi = raw.split(":", 1)[1].strip().upper()
+            elif ru.startswith("ILCE:"):
+                ilce_adi = raw.split(":", 1)[1].strip().upper()
 
     # ── 2. Başlık satırını bul ───────────────────────────────────────
     header_row = None
@@ -765,19 +772,37 @@ def parse_planli_uretim_xls(content: bytes, yil: int) -> tuple[list[dict], str, 
             break
 
     if header_row is None:
-        return [], il_adi, ilce_adi
+        return [], il_adi, ilce_adi, {}
 
     # ── 3. Satırları oku ─────────────────────────────────────────────
     rows: list[dict] = []
+    toplam: dict = {}
     for r in range(header_row + 1, max_row + 1):
         il_val   = _clean(cells.get((r, col_map.get("il",   -1))), 60)  or il_adi
         ilce_val = _clean(cells.get((r, col_map.get("ilce", -1))), 60)  or ilce_adi
         koy_val  = _clean(cells.get((r, col_map.get("koy",  -1))), 120)
         urun_val = _clean(cells.get((r, col_map.get("urun_grubu", -1))), 120)
 
-        if not koy_val or not urun_val:
+        if not koy_val:
             continue
-        if any(kw in koy_val.lower()  for kw in ("toplam", "genel")):
+
+        # TOPLAM satırını ayrıca yakala, kaydetme
+        if any(kw in koy_val.lower() for kw in ("toplam", "genel")):
+            def _tc(field: str, _r: int = r) -> float:
+                return _num(cells.get((_r, col_map.get(field, -1))))
+            def _ti(field: str, _r: int = r) -> int:
+                v = cells.get((_r, col_map.get(field, -1)))
+                try: return max(0, int(float(v or 0)))
+                except: return 0
+            toplam = {
+                "isletme_sayisi":        _ti("isletme_sayisi"),
+                "destege_tabi_alan_da":  _tc("destege_tabi_alan_da"),
+                "yeralti_su_alan_da":    _tc("yeralti_su_alan_da"),
+                "destekleme_miktari_tl": _tc("destekleme_miktari_tl"),
+            }
+            continue
+
+        if not urun_val:
             continue
         if any(kw in urun_val.lower() for kw in ("toplam", "genel")):
             continue
@@ -801,4 +826,157 @@ def parse_planli_uretim_xls(content: bytes, yil: int) -> tuple[list[dict], str, 
             "destekleme_miktari_tl": _num(cells.get((r, col_map.get("destekleme_miktari_tl", -1)))),
         })
 
-    return rows, il_adi, ilce_adi
+    return rows, il_adi, ilce_adi, toplam
+
+
+# ═══════════════════════════════════════════════════════════
+# SERTİFİKALI FİDAN KULLANIM DESTEĞİ — XLS (İCMAL-2)
+# ═══════════════════════════════════════════════════════════
+
+def parse_sertifikali_fidan_xls(content: bytes, yil: int) -> tuple[list[dict], str, str]:
+    """
+    İCMAL-2 formatındaki Sertifikalı Fidan Kullanım Desteği XLS dosyasını parse eder.
+    pandas bağımlılığı kaldırılmış — xlrd doğrudan kullanılır.
+
+    Başlık satırını otomatik bulur: 'İlçe' + 'Fidan' + 'Kişi' içeren satır.
+    İl/ilçe bilgisini metadata satırlarından ('İl : BURDUR', 'İlçe : BUCAK') okur.
+
+    Sütunlar: Sıra No | İl | İlçe | Mahalle/Köy | Kişi Sayısı |
+              Fidan Türü | Fidan Sayısı | Sertifikalı Alan (da) |
+              Standart Alan (da) | Destekleme Alanı (da) | Destekleme Tutarı (TL)
+
+    Returns (rows, il_adi, ilce_adi, toplam)
+    """
+    try:
+        import xlrd as _xlrd
+    except ImportError:
+        return [], "", "", {}
+
+    try:
+        wb = _xlrd.open_workbook(file_contents=content)
+    except Exception:
+        return [], "", "", {}
+
+    sh = wb.sheets()[0]
+    nrows, ncols = sh.nrows, sh.ncols
+
+    def _cell_str(r: int, c: int) -> str:
+        """Hücreyi string olarak döndürür; xlrd'nin tırnaklı string sorununu düzeltir."""
+        try:
+            v = sh.cell_value(r, c)
+            if v is None:
+                return ""
+            return str(v).strip().strip("'\"")
+        except Exception:
+            return ""
+
+    def _cell_num(r: int, c: int) -> float:
+        try:
+            v = sh.cell_value(r, c)
+            if sh.cell_type(r, c) == _xlrd.XL_CELL_NUMBER:
+                return float(v)
+            return float(str(v).strip().strip("'\""))
+        except Exception:
+            return 0.0
+
+    def _int_cell(r: int, c: int) -> int:
+        try:
+            return max(0, int(_cell_num(r, c)))
+        except Exception:
+            return 0
+
+    def _num_cell(r: int, c: int) -> float:
+        return round(_cell_num(r, c), 3)
+
+    # ── 1. Metadata: il / ilçe ─────────────────────────────────────
+    il_adi = "BURDUR"
+    ilce_adi = ""
+    for r in range(min(25, nrows)):
+        for c in range(ncols):
+            raw = _cell_str(r, c)
+            if not raw or ":" not in raw:
+                continue
+            norm = _tr_norm(raw)
+            key = norm.partition(":")[0].strip()
+            val = raw.split(":", 1)[1].strip().upper()
+            if key == "il":
+                il_adi = val
+            elif key in ("ilce", "ilc"):
+                ilce_adi = val
+
+    # ── 2. Başlık satırını bul ──────────────────────────────────────
+    header_row = None
+    col_map: dict[str, int] = {}
+
+    for r in range(min(25, nrows)):
+        vn = {c: _tr_norm(_cell_str(r, c)) for c in range(ncols)}
+
+        if (any("fidan" in v for v in vn.values()) and
+                any(v == "ilce" for v in vn.values()) and
+                any("kisi" in v for v in vn.values())):
+            header_row = r
+            for c, v in vn.items():
+                if v == "il":
+                    col_map.setdefault("il", c)
+                elif v == "ilce":
+                    col_map.setdefault("ilce", c)
+                elif "mahalle" in v or "koy" in v:
+                    col_map.setdefault("koy", c)
+                elif "kisisayisi" in v:
+                    col_map.setdefault("kisi_sayisi", c)
+                elif "fidanturu" in v:
+                    col_map.setdefault("fidan_turu", c)
+                elif "fidansayisi" in v:
+                    col_map.setdefault("fidan_sayisi", c)
+                elif "sertifikali" in v and "alan" in v:
+                    col_map.setdefault("sertifikali_alan_da", c)
+                elif "standart" in v and "alan" in v:
+                    col_map.setdefault("standart_alan_da", c)
+                elif "destekleme" in v and "alan" in v and "tutari" not in v:
+                    col_map.setdefault("destekleme_alani_da", c)
+                elif "destekleme" in v and ("tutari" in v or "miktari" in v):
+                    col_map.setdefault("destekleme_tutari_tl", c)
+            break
+
+    if header_row is None:
+        return [], il_adi, ilce_adi, {}
+
+    # ── 3. Veri satırlarını oku ────────────────────────────────────
+    rows: list[dict] = []
+    toplam: dict = {}
+    for r in range(header_row + 1, nrows):
+        koy_val   = _cell_str(r, col_map.get("koy",  -1))
+        fidan_val = _cell_str(r, col_map.get("fidan_turu", -1))
+        il_val    = _cell_str(r, col_map.get("il",   -1)) or il_adi
+        ilce_val  = _cell_str(r, col_map.get("ilce", -1)) or ilce_adi
+
+        if not koy_val:
+            continue
+
+        # TOPLAM satırını yakala, kaydetme
+        if any(kw in koy_val.upper() for kw in ("TOPLAM", "GENEL")):
+            toplam = {
+                "kisi_sayisi":          _int_cell(r, col_map.get("kisi_sayisi",        -1)),
+                "fidan_sayisi":         _int_cell(r, col_map.get("fidan_sayisi",        -1)),
+                "sertifikali_alan_da":  _num_cell(r, col_map.get("sertifikali_alan_da", -1)),
+                "standart_alan_da":     _num_cell(r, col_map.get("standart_alan_da",    -1)),
+                "destekleme_alani_da":  _num_cell(r, col_map.get("destekleme_alani_da", -1)),
+                "destekleme_tutari_tl": _num_cell(r, col_map.get("destekleme_tutari_tl",-1)),
+            }
+            continue
+
+        rows.append({
+            "yil":                  yil,
+            "il":                   il_val.upper(),
+            "ilce":                 ilce_val.upper(),
+            "koy":                  koy_val.upper(),
+            "fidan_turu":           fidan_val,
+            "kisi_sayisi":          _int_cell(r, col_map.get("kisi_sayisi",        -1)),
+            "fidan_sayisi":         _int_cell(r, col_map.get("fidan_sayisi",        -1)),
+            "sertifikali_alan_da":  _num_cell(r, col_map.get("sertifikali_alan_da", -1)),
+            "standart_alan_da":     _num_cell(r, col_map.get("standart_alan_da",    -1)),
+            "destekleme_alani_da":  _num_cell(r, col_map.get("destekleme_alani_da", -1)),
+            "destekleme_tutari_tl": _num_cell(r, col_map.get("destekleme_tutari_tl",-1)),
+        })
+
+    return rows, il_adi, ilce_adi, toplam

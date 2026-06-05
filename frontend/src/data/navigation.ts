@@ -38,7 +38,8 @@ export const MODULES: Module[] = [
       { icon: "🐄", label: "Hayvancılık Destekleri", pageId: "p-hayv-d" },
       { icon: "🥛", label: "Süt Destekleme",         pageId: "p-sut-dest" },
       { icon: "🌿", label: "Bitkisel Destekler",     pageId: "p-bitkisel-dest" },
-      { icon: "📋", label: "Planlı Üretim Desteği", pageId: "p-planli-uretim" },
+      { icon: "📋", label: "Planlı Üretim Desteği",        pageId: "p-planli-uretim" },
+      { icon: "🌱", label: "Sertifikalı Fidan Desteği",    pageId: "p-sertifikali-fidan" },
     ],
   },
   {

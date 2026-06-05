@@ -18,7 +18,8 @@ const FarkPrimTable       = lazy(() => import("@/components/FarkPrimTable"));
 const HayvDestekTable     = lazy(() => import("@/components/HayvDestekTable"));
 const GenelDestekTable    = lazy(() => import("@/components/GenelDestekTable"));
 const BitkiselDestekTable = lazy(() => import("@/components/BitkiselDestekTable"));
-const PlanliUretimTable   = lazy(() => import("@/components/PlanliUretimTable"));
+const PlanliUretimTable      = lazy(() => import("@/components/PlanliUretimTable"));
+const SertifikaliFidanTable  = lazy(() => import("@/components/SertifikaliFidanTable"));
 const KoyBilgiNotu        = lazy(() => import("@/components/KoyBilgiNotu"));
 
 // ── Tipler ────────────────────────────────────────────────────────
@@ -213,6 +214,23 @@ function PlanliUretimPage(mp: MP) {
     </div>
   );
 }
+
+function SertifikaliFidanPage(mp: MP) {
+  return (
+    <div>
+      <PgHeader
+        breadcrumb="Tarımsal Destekler <span>›</span> Sertifikalı Fidan Desteği"
+        title="Sertifikalı Fidan Kullanım Desteği"
+        tag="Sertifikalı Fidan"
+      />
+      <MapPanel {...mp} />
+      <SertifikaliFidanTable
+        defaultIlce={mp.activeDistrictName?.toLocaleUpperCase("tr-TR") ?? ""}
+        defaultKoy={mp.selectedVillage}
+      />
+    </div>
+  );
+}
 const SuPage       = makeComingPage("Tarımsal İstatistikler <span>›</span> Su Ürünleri",    "Su Ürünleri İstatistikleri",         "Su Ürünleri", "🐟", "Burdur Gölü ve diğer su kaynaklarına ait veriler işlenmektedir.");
 const EkonomikPage = makeComingPage("Kırsal Kalkınma <span>›</span> Ekonomik Yatırımlar",  "Ekonomik Yatırımlar",                "Kırsal Kalkınma", "🏭");
 const MakinePage   = makeComingPage("Kırsal Kalkınma <span>›</span> Makine – Ekipman",     "Makine – Ekipman Destekleri",        "Makine-Ekipman", "⚙️", undefined, "(2015 yılında sona ermiştir)", "03.10.2019");
@@ -235,7 +253,8 @@ function renderPage(pageId: string, mp: MP) {
     case "p-hayv-d":        return wrap(<HayvDestekTable />);
     case "p-sut-dest":      return wrap(<SutDestPage {...mp} />);
     case "p-bitkisel-dest": return wrap(<BitkiselDestPage {...mp} />);
-    case "p-planli-uretim": return wrap(<PlanliUretimPage {...mp} />);
+    case "p-planli-uretim":      return wrap(<PlanliUretimPage {...mp} />);
+    case "p-sertifikali-fidan":  return wrap(<SertifikaliFidanPage {...mp} />);
     case "p-bitk":          return wrap(<BitkPage {...mp} />);
     case "p-grup":          return wrap(<GrupPage {...mp} />);
     case "p-hayv-ist":      return wrap(<HayvIstPage {...mp} />);

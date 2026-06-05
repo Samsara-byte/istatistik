@@ -1,49 +1,36 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { api, type PlanliUretimRow } from "@/lib/api";
+import { api, type SertifikaliFidanRow } from "@/lib/api";
 import * as XLSX from "xlsx";
 import {
-  ILCELER,
-  getVillages,
-  Sel,
-  Inp,
-  FilterBar,
-  TableHeader,
-  ResetBtn,
-  ExcelBtn,
-  SortableTh,
-  Pagination,
-  fmt,
-  YEARS,
-  useSortState,
-  LoadingRow,
-  EmptyRow,
+  ILCELER, getVillages, Sel, Inp, FilterBar, TableHeader,
+  ResetBtn, ExcelBtn, SortableTh, Pagination, fmt, YEARS,
+  useSortState, LoadingRow, EmptyRow,
 } from "@/lib/ui";
 
-type Col = {
-  key: keyof PlanliUretimRow;
-  label: string;
-  isText?: boolean;
-  width?: number;
-};
+type Col = { key: keyof SertifikaliFidanRow; label: string; isText?: boolean };
 
 const COLS: Col[] = [
-  { key: "ilce",                  label: "İlçe",                    isText: true },
-  { key: "koy",                   label: "Köy / Mahalle",           isText: true },
-  { key: "urun_grubu",            label: "Ürün / Ürün Grubu",       isText: true },
-  { key: "isletme_sayisi",        label: "İşletme Sayısı",          width: 100 },
-  { key: "destege_tabi_alan_da",  label: "Desteğe Tabi Alan (da)",  width: 130 },
-  { key: "yeralti_su_alan_da",    label: "Yeraltı Su Kısıtı (da)",  width: 130 },
-  { key: "destekleme_miktari_tl", label: "Destekleme Miktarı (₺)",  width: 140 },
+  { key: "ilce",                 label: "İlçe",                    isText: true },
+  { key: "koy",                  label: "Köy / Mahalle",           isText: true },
+  { key: "fidan_turu",           label: "Fidan Türü",              isText: true },
+  { key: "kisi_sayisi",          label: "Kişi Sayısı" },
+  { key: "fidan_sayisi",         label: "Fidan Sayısı" },
+  { key: "sertifikali_alan_da",  label: "Sertifikalı Alan (da)" },
+  { key: "standart_alan_da",     label: "Standart Alan (da)" },
+  { key: "destekleme_alani_da",  label: "Destekleme Alanı (da)" },
+  { key: "destekleme_tutari_tl", label: "Destekleme Tutarı (₺)" },
 ];
 
 const COL_COLORS: Record<string, string> = {
-  isletme_sayisi:        "#1a5276",
-  destege_tabi_alan_da:  "#2a3d8b",
-  yeralti_su_alan_da:    "#1a6b3a",
-  destekleme_miktari_tl: "#4a2070",
+  kisi_sayisi:          "#1a5276",
+  fidan_sayisi:         "#1a6b3a",
+  sertifikali_alan_da:  "#2a3d8b",
+  standart_alan_da:     "#6b2020",
+  destekleme_alani_da:  "#4a5568",
+  destekleme_tutari_tl: "#4a2070",
 };
 
-export default function PlanliUretimTable({
+export default function SertifikaliFidanTable({
   defaultIlce = "",
   defaultKoy  = "",
 }: {
@@ -53,8 +40,8 @@ export default function PlanliUretimTable({
   const [yil,       setYil]      = useState("2025");
   const [ilce,      setIlce]     = useState(defaultIlce.toLocaleUpperCase("tr-TR"));
   const [koy,       setKoy]      = useState(defaultKoy);
-  const [urunGrubu, setUrunGrubu] = useState("");
-  const [data,      setData]     = useState<PlanliUretimRow[]>([]);
+  const [fidanTuru, setFidanTuru] = useState("");
+  const [data,      setData]     = useState<SertifikaliFidanRow[]>([]);
   const [toplam,    setToplam]   = useState<Record<string, number>>({});
   const [ozet,      setOzet]     = useState<Record<string, number>>({});
   const [total,     setTotal]    = useState(0);
@@ -62,7 +49,7 @@ export default function PlanliUretimTable({
   const [page,      setPage]     = useState(1);
   const [loading,   setLoading]  = useState(false);
   const [exporting, setExporting] = useState(false);
-  const { sort, onSort, resetSort } = useSortState("destege_tabi_alan_da", "desc");
+  const { sort, onSort, resetSort } = useSortState("destekleme_tutari_tl", "desc");
   const debounce = useRef<ReturnType<typeof setTimeout>>();
   const villages = getVillages(ilce);
 
@@ -74,43 +61,33 @@ export default function PlanliUretimTable({
       setLoading(true);
       try {
         const [res, oz, top] = await Promise.all([
-          api.listPlanliUretim({
+          api.listSertifikaliFidan({
             yil: parseInt(yil),
-            ilce:       ilce       || undefined,
-            koy:        koy        || undefined,
-            urun_grubu: urunGrubu  || undefined,
-            sort_by:  sk || undefined,
-            sort_dir: sd || undefined,
-            page: pg,
-            limit: 100,
+            ilce:       ilce      || undefined,
+            koy:        koy       || undefined,
+            fidan_turu: fidanTuru || undefined,
+            sort_by: sk || undefined, sort_dir: sd || undefined,
+            page: pg, limit: 100,
           }),
-          api.planliUretimOzet({
-            yil: parseInt(yil),
-            ilce: ilce || undefined,
-            group_by: "ilce",
-          }),
-          api.planliUretimToplam({ yil: parseInt(yil), ilce: ilce || undefined }),
+          api.sertifikaliFidanOzet({ yil: parseInt(yil), ilce: ilce || undefined, group_by: "ilce" }),
+          api.sertifikaliFidanToplam({ yil: parseInt(yil), ilce: ilce || undefined }),
         ]);
         setData(res.data);
         setTotal(res.total);
         setPages(res.pages);
         setPage(res.page);
         setToplam(top);
-
-        // Özet toplamları
         const totals: Record<string, number> = {};
         for (const row of oz.data) {
           const r = row as Record<string, unknown>;
-          for (const k of ["isletme_toplam", "alan_toplam", "yeralti_alan_toplam", "destek_toplam"]) {
+          for (const k of ["kisi_toplam","fidan_toplam","sertifikali_alan_toplam","standart_alan_toplam","destekleme_alani_toplam","destek_toplam"]) {
             totals[k] = (totals[k] || 0) + (Number(r[k]) || 0);
           }
         }
         setOzet(totals);
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     },
-    [yil, ilce, koy, urunGrubu, sort.key, sort.dir],
+    [yil, ilce, koy, fidanTuru, sort.key, sort.dir],
   );
 
   useEffect(() => {
@@ -128,57 +105,45 @@ export default function PlanliUretimTable({
   const exportExcel = useCallback(async () => {
     setExporting(true);
     try {
-      const res = await api.listPlanliUretim({
-        yil: parseInt(yil),
-        ilce: ilce || undefined, koy: koy || undefined,
-        urun_grubu: urunGrubu || undefined,
-        limit: 50000,
+      const res = await api.listSertifikaliFidan({
+        yil: parseInt(yil), ilce: ilce || undefined,
+        koy: koy || undefined, fidan_turu: fidanTuru || undefined, limit: 50000,
       });
       const headers = COLS.map((c) => c.label);
       const rows = res.data.map((r) => COLS.map((c) => r[c.key] ?? ""));
       const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
       ws["!cols"] = COLS.map((c) => ({ wch: c.isText ? 22 : 16 }));
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Planlı Üretim");
-      XLSX.writeFile(wb, `planli_uretim_${yil}${ilce ? "_" + ilce : ""}.xlsx`);
-    } finally {
-      setExporting(false);
-    }
-  }, [yil, ilce, koy, urunGrubu]);
+      XLSX.utils.book_append_sheet(wb, ws, "Sertifikalı Fidan");
+      XLSX.writeFile(wb, `sertifikali_fidan_${yil}${ilce ? "_" + ilce : ""}.xlsx`);
+    } finally { setExporting(false); }
+  }, [yil, ilce, koy, fidanTuru]);
 
   const ozetKartlar = [
-    { label: "Desteğe Tabi Alan (da)", val: fmt(ozet.alan_toplam),          color: "#2a3d8b" },
-    { label: "Destekleme (₺)",         val: fmt(ozet.destek_toplam),         color: "#4a2070" },
-    { label: "İşletme Sayısı",         val: fmt(ozet.isletme_toplam),        color: "#1a5276" },
-    { label: "Yeraltı Su Kısıtı (da)", val: fmt(ozet.yeralti_alan_toplam),   color: "#1a6b3a" },
+    { label: "Destekleme (₺)",         val: fmt(ozet.destek_toplam),              color: "#4a2070" },
+    { label: "Destekleme Alanı (da)",   val: fmt(ozet.destekleme_alani_toplam),    color: "#2a3d8b" },
+    { label: "Fidan Sayısı",            val: fmt(ozet.fidan_toplam),               color: "#1a6b3a" },
+    { label: "Kişi Sayısı",             val: fmt(ozet.kisi_toplam),                color: "#1a5276" },
+    { label: "Sertifikalı Alan (da)",   val: fmt(ozet.sertifikali_alan_toplam),    color: "#4a5568" },
   ];
 
   return (
     <div className="dc" style={{ marginTop: 16 }}>
-      {/* Özet kartlar */}
       {Object.keys(ozet).length > 0 && (
         <div style={{ display: "flex", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--br)", flexWrap: "wrap" }}>
           {ozetKartlar.map((k) => (
             <div key={k.label} style={{ flex: 1, minWidth: 120, padding: "9px 12px", borderRadius: 8, background: "#fafbfa", border: `1.5px solid ${k.color}22` }}>
-              <div style={{ fontSize: 9.5, fontWeight: 700, color: k.color, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 2 }}>
-                {k.label}
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "var(--tx)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>
-                {k.val}
-              </div>
+              <div style={{ fontSize: 9.5, fontWeight: 700, color: k.color, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 2 }}>{k.label}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "var(--tx)", fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{k.val}</div>
             </div>
           ))}
         </div>
       )}
 
       <TableHeader>
-        <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "var(--gd)" }}>
-          Planlı Üretim Desteği
-        </h2>
+        <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "var(--gd)" }}>Sertifikalı Fidan Kullanım Desteği</h2>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 11, color: "var(--mu)", fontWeight: 600 }}>
-            {total.toLocaleString("tr-TR")} kayıt
-          </span>
+          <span style={{ fontSize: 11, color: "var(--mu)", fontWeight: 600 }}>{total.toLocaleString("tr-TR")} kayıt</span>
           <ExcelBtn onClick={exportExcel} disabled={total === 0} loading={exporting} />
         </div>
       </TableHeader>
@@ -197,8 +162,8 @@ export default function PlanliUretimTable({
             {villages.map((v) => <option key={v} value={v}>{v}</option>)}
           </Sel>
         )}
-        <Inp label="Ürün Grubu" value={urunGrubu} onChange={setUrunGrubu} placeholder="Ara…" />
-        <ResetBtn onClick={() => { setIlce(defaultIlce.toLocaleUpperCase("tr-TR")); setKoy(""); setYil("2025"); setUrunGrubu(""); resetSort(); }} />
+        <Inp label="Fidan Türü" value={fidanTuru} onChange={setFidanTuru} placeholder="Ara…" />
+        <ResetBtn onClick={() => { setIlce(defaultIlce.toLocaleUpperCase("tr-TR")); setKoy(""); setYil("2025"); setFidanTuru(""); resetSort(); }} />
       </FilterBar>
 
       <div style={{ overflowX: "auto" }}>
@@ -215,7 +180,7 @@ export default function PlanliUretimTable({
             {loading ? (
               <LoadingRow cols={COLS.length + 1} />
             ) : data.length === 0 ? (
-              <EmptyRow cols={COLS.length + 1} text="Veri yok — İçeri Aktar ile planlı üretim verisi yükleyin" />
+              <EmptyRow cols={COLS.length + 1} text="Veri yok — İçeri Aktar ile sertifikalı fidan verisi yükleyin" />
             ) : (
               <>
                 {data.map((row, ri) => (
@@ -228,7 +193,7 @@ export default function PlanliUretimTable({
                     {(page - 1) * 100 + ri + 1}
                   </td>
                   {COLS.map((col) => {
-                    const v = row[col.key as keyof PlanliUretimRow];
+                    const v = row[col.key as keyof SertifikaliFidanRow];
                     const color = COL_COLORS[col.key as string];
                     if (col.isText)
                       return (

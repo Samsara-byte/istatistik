@@ -148,6 +148,24 @@ TABLES: list[str] = [
         updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()  -- upsert güncellemesi
     )""",
 
+    # ── Sertifikalı Fidan Kullanım Desteği (İCMAL-2) ─────────────────
+    """CREATE TABLE IF NOT EXISTS sertifikali_fidan_destek (
+        id                      SERIAL        PRIMARY KEY,
+        yil                     SMALLINT      NOT NULL,
+        il                      VARCHAR(60)   NOT NULL DEFAULT 'BURDUR',
+        ilce                    VARCHAR(60)   NOT NULL,
+        koy                     VARCHAR(120)  NOT NULL,
+        fidan_turu              VARCHAR(120)  NOT NULL DEFAULT '',
+        kisi_sayisi             INTEGER       NOT NULL DEFAULT 0,
+        fidan_sayisi            INTEGER       NOT NULL DEFAULT 0,
+        sertifikali_alan_da     NUMERIC(14,3) NOT NULL DEFAULT 0,
+        standart_alan_da        NUMERIC(14,3) NOT NULL DEFAULT 0,
+        destekleme_alani_da     NUMERIC(14,3) NOT NULL DEFAULT 0,
+        destekleme_tutari_tl    NUMERIC(16,2) NOT NULL DEFAULT 0,
+        created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )""",
+
     # ── Planlı Üretim Desteği (İCMAL-2, köy/mahalle detay) ──────────
     # Her satır: bir ilçe-köy-ürün kombinasyonunun destek özeti
     # UNIQUE: aynı yıl-ilçe-köy-ürün kombinasyonu tek satır (ON CONFLICT upsert)
@@ -231,6 +249,12 @@ INDEXES: list[str] = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_bd_unique ON bitkisel_destek(yil, ilce, koy, urun)",
     "CREATE INDEX IF NOT EXISTS idx_bd_yil     ON bitkisel_destek(yil)",
     "CREATE INDEX IF NOT EXISTS idx_bd_ilce    ON bitkisel_destek(ilce)",
+
+    # sertifikali_fidan_destek
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_sfd_unique ON sertifikali_fidan_destek(yil, ilce, koy, fidan_turu)",
+    "CREATE INDEX IF NOT EXISTS idx_sfd_yil        ON sertifikali_fidan_destek(yil)",
+    "CREATE INDEX IF NOT EXISTS idx_sfd_ilce       ON sertifikali_fidan_destek(ilce)",
+    "CREATE INDEX IF NOT EXISTS idx_sfd_ilce_koy   ON sertifikali_fidan_destek(ilce, koy)",
 
     # planli_uretim_destek
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_pud_unique ON planli_uretim_destek(yil, ilce, koy, urun_grubu)",

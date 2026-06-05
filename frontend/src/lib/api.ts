@@ -115,6 +115,39 @@ export interface BitkiselDestekRow {
   net_odeme_tl: number;
 }
 
+export interface SertifikaliFidanRow {
+  id: number;
+  yil: number;
+  il: string;
+  ilce: string;
+  koy: string;
+  fidan_turu: string;
+  kisi_sayisi: number;
+  fidan_sayisi: number;
+  sertifikali_alan_da: number;
+  standart_alan_da: number;
+  destekleme_alani_da: number;
+  destekleme_tutari_tl: number;
+}
+
+export interface SertifikaliFidanListResponse {
+  data: SertifikaliFidanRow[];
+  total: number;
+  page: number;
+  pages: number;
+  limit: number;
+}
+
+export interface SertifikaliFidanImportResponse {
+  ok: boolean;
+  yil: number;
+  ilce: string;
+  eklenen: number;
+  guncellenen: number;
+  silinen: number;
+  sure_sn: number;
+}
+
 export interface PlanliUretimRow {
   id: number;
   yil: number;
@@ -438,6 +471,38 @@ export const api = {
     );
   },
 
+  // ── Sertifikalı Fidan Kullanım Desteği ──
+  listSertifikaliFidan(
+    p: {
+      yil?: number; ilce?: string; koy?: string; fidan_turu?: string;
+      sort_by?: string; sort_dir?: 'asc' | 'desc'; page?: number; limit?: number;
+    },
+    signal?: AbortSignal,
+  ) {
+    return get<SertifikaliFidanListResponse>('/api/sertifikali-fidan', p as Record<string, unknown>, signal);
+  },
+
+  sertifikaliFidanOzet(
+    p: { yil?: number; ilce?: string; group_by?: string },
+    signal?: AbortSignal,
+  ) {
+    return get<{ group_by: string; data: Record<string, unknown>[] }>(
+      '/api/sertifikali-fidan/ozet', p as Record<string, unknown>, signal,
+    );
+  },
+
+  sertifikaliFidanToplam(p: { yil?: number; ilce?: string }, signal?: AbortSignal) {
+    return get<Record<string, number>>('/api/sertifikali-fidan/toplam', p as Record<string, unknown>, signal);
+  },
+
+  async importSertifikaliFidan(file: File, yil: string, truncate = false): Promise<SertifikaliFidanImportResponse> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('yil', yil);
+    fd.append('truncate', String(truncate));
+    return postForm('/api/import/sertifikali-fidan', fd);
+  },
+
   // ── Planlı Üretim Desteği ──
   listPlanliUretim(
     p: {
@@ -456,6 +521,10 @@ export const api = {
     return get<{ group_by: string; data: Record<string, unknown>[] }>(
       '/api/planli-uretim/ozet', p as Record<string, unknown>, signal,
     );
+  },
+
+  planliUretimToplam(p: { yil?: number; ilce?: string }, signal?: AbortSignal) {
+    return get<Record<string, number>>('/api/planli-uretim/toplam', p as Record<string, unknown>, signal);
   },
 
   async importPlanliUretim(file: File, yil: string, truncate = false): Promise<PlanliUretimImportResponse> {
