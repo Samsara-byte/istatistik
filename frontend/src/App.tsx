@@ -20,6 +20,10 @@ const GenelDestekTable    = lazy(() => import("@/components/GenelDestekTable"));
 const BitkiselDestekTable = lazy(() => import("@/components/BitkiselDestekTable"));
 const PlanliUretimTable      = lazy(() => import("@/components/PlanliUretimTable"));
 const SertifikaliFidanTable  = lazy(() => import("@/components/SertifikaliFidanTable"));
+const SertifikaliTohumTable  = lazy(() => import("@/components/SertifikaliTohumTable"));
+const TemelDestekTable       = lazy(() => import("@/components/TemelDestekTable"));
+const YemBitkileriTable      = lazy(() => import("@/components/YemBitkileriTable"));
+const ZiraiDonTable          = lazy(() => import("@/components/ZiraiDonTable"));
 const KoyBilgiNotu        = lazy(() => import("@/components/KoyBilgiNotu"));
 
 // ── Tipler ────────────────────────────────────────────────────────
@@ -231,6 +235,74 @@ function SertifikaliFidanPage(mp: MP) {
     </div>
   );
 }
+function SertifikaliTohumPage(mp: MP) {
+  return (
+    <div>
+      <PgHeader
+        breadcrumb="Tarımsal Destekler <span>›</span> Sertifikalı Tohum Desteği"
+        title="Sertifikalı Tohum Kullanım Desteği"
+        tag="Sertifikalı Tohum"
+      />
+      <MapPanel {...mp} />
+      <SertifikaliTohumTable
+        defaultIlce={mp.activeDistrictName?.toLocaleUpperCase("tr-TR") ?? ""}
+        defaultKoy={mp.selectedVillage}
+      />
+    </div>
+  );
+}
+
+function TemelDestekPage(mp: MP) {
+  return (
+    <div>
+      <PgHeader
+        breadcrumb="Tarımsal Destekler <span>›</span> Temel Destek"
+        title="Temel Destek"
+        tag="Temel Destek"
+      />
+      <MapPanel {...mp} />
+      <TemelDestekTable
+        defaultIlce={mp.activeDistrictName?.toLocaleUpperCase("tr-TR") ?? ""}
+        defaultKoy={mp.selectedVillage}
+      />
+    </div>
+  );
+}
+
+function YemBitkileriPage(mp: MP) {
+  return (
+    <div>
+      <PgHeader
+        breadcrumb="Tarımsal Destekler <span>›</span> Yem Bitkileri Desteği"
+        title="Yem Bitkileri Desteği"
+        tag="Yem Bitkileri"
+      />
+      <MapPanel {...mp} />
+      <YemBitkileriTable
+        defaultIlce={mp.activeDistrictName?.toLocaleUpperCase("tr-TR") ?? ""}
+        defaultKoy={mp.selectedVillage}
+      />
+    </div>
+  );
+}
+
+function ZiraiDonPage(mp: MP) {
+  return (
+    <div>
+      <PgHeader
+        breadcrumb="Tarımsal Destekler <span>›</span> Zirai Don Desteği"
+        title="Zirai Don Desteği"
+        tag="Zirai Don"
+      />
+      <MapPanel {...mp} />
+      <ZiraiDonTable
+        defaultIlce={mp.activeDistrictName?.toLocaleUpperCase("tr-TR") ?? ""}
+        defaultKoy={mp.selectedVillage}
+      />
+    </div>
+  );
+}
+
 const SuPage       = makeComingPage("Tarımsal İstatistikler <span>›</span> Su Ürünleri",    "Su Ürünleri İstatistikleri",         "Su Ürünleri", "🐟", "Burdur Gölü ve diğer su kaynaklarına ait veriler işlenmektedir.");
 const EkonomikPage = makeComingPage("Kırsal Kalkınma <span>›</span> Ekonomik Yatırımlar",  "Ekonomik Yatırımlar",                "Kırsal Kalkınma", "🏭");
 const MakinePage   = makeComingPage("Kırsal Kalkınma <span>›</span> Makine – Ekipman",     "Makine – Ekipman Destekleri",        "Makine-Ekipman", "⚙️", undefined, "(2015 yılında sona ermiştir)", "03.10.2019");
@@ -255,6 +327,10 @@ function renderPage(pageId: string, mp: MP) {
     case "p-bitkisel-dest": return wrap(<BitkiselDestPage {...mp} />);
     case "p-planli-uretim":      return wrap(<PlanliUretimPage {...mp} />);
     case "p-sertifikali-fidan":  return wrap(<SertifikaliFidanPage {...mp} />);
+    case "p-sertifikali-tohum":  return wrap(<SertifikaliTohumPage {...mp} />);
+    case "p-temel-destek":       return wrap(<TemelDestekPage {...mp} />);
+    case "p-yem-bitkileri":      return wrap(<YemBitkileriPage {...mp} />);
+    case "p-zirai-don":          return wrap(<ZiraiDonPage {...mp} />);
     case "p-bitk":          return wrap(<BitkPage {...mp} />);
     case "p-grup":          return wrap(<GrupPage {...mp} />);
     case "p-hayv-ist":      return wrap(<HayvIstPage {...mp} />);

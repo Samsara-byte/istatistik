@@ -980,3 +980,590 @@ def parse_sertifikali_fidan_xls(content: bytes, yil: int) -> tuple[list[dict], s
         })
 
     return rows, il_adi, ilce_adi, toplam
+
+
+# ═══════════════════════════════════════════════════════════
+# SERTİFİKALI TOHUM KULLANIM DESTEĞİ — XLS (İCMAL-2)
+# ═══════════════════════════════════════════════════════════
+
+def parse_sertifikali_tohum_xls(content: bytes, yil: int) -> tuple[list[dict], str, str, dict]:
+    """
+    İCMAL-2 formatındaki Sertifikalı Tohum Kullanım Desteği XLS dosyasını parse eder.
+
+    Sütunlar: Sıra No | İl | İlçe | Mahalle/Köy | Ürün |
+              İşletme Sayısı | Destekleme Alanı (da) | Destekleme Miktarı (TL)
+
+    Returns (rows, il_adi, ilce_adi, toplam)
+    """
+    try:
+        import xlrd as _xlrd
+    except ImportError:
+        return [], "", "", {}
+
+    try:
+        wb = _xlrd.open_workbook(file_contents=content)
+    except Exception:
+        return [], "", "", {}
+
+    sh = wb.sheets()[0]
+    nrows, ncols = sh.nrows, sh.ncols
+
+    def _cell_str(r: int, c: int) -> str:
+        try:
+            v = sh.cell_value(r, c)
+            if v is None:
+                return ""
+            return str(v).strip().strip("'\"")
+        except Exception:
+            return ""
+
+    def _cell_num(r: int, c: int) -> float:
+        try:
+            v = sh.cell_value(r, c)
+            if sh.cell_type(r, c) == _xlrd.XL_CELL_NUMBER:
+                return float(v)
+            return float(str(v).strip().strip("'\""))
+        except Exception:
+            return 0.0
+
+    def _int_cell(r: int, c: int) -> int:
+        try:
+            return max(0, int(_cell_num(r, c)))
+        except Exception:
+            return 0
+
+    def _num_cell(r: int, c: int) -> float:
+        return round(_cell_num(r, c), 3)
+
+    # ── 1. Metadata: il / ilçe ─────────────────────────────────────
+    il_adi = "BURDUR"
+    ilce_adi = ""
+    for r in range(min(25, nrows)):
+        for c in range(ncols):
+            raw = _cell_str(r, c)
+            if not raw or ":" not in raw:
+                continue
+            norm = _tr_norm(raw)
+            key = norm.partition(":")[0].strip()
+            val = raw.split(":", 1)[1].strip().upper()
+            if key == "il":
+                il_adi = val
+            elif key in ("ilce", "ilc"):
+                ilce_adi = val
+
+    # ── 2. Başlık satırını bul ──────────────────────────────────────
+    # Aranacak: 'ilce' + 'urun' + 'isletme' veya 'mahalle'/'koy' içeren satır
+    header_row = None
+    col_map: dict[str, int] = {}
+
+    for r in range(min(25, nrows)):
+        vn = {c: _tr_norm(_cell_str(r, c)) for c in range(ncols)}
+        has_ilce    = any(v == "ilce" for v in vn.values())
+        has_urun    = any("urun" in v for v in vn.values())
+        has_isletme = any("isletme" in v for v in vn.values())
+
+        if has_ilce and has_urun and has_isletme:
+            header_row = r
+            for c, v in vn.items():
+                if v == "il":
+                    col_map.setdefault("il", c)
+                elif v == "ilce":
+                    col_map.setdefault("ilce", c)
+                elif "mahalle" in v or "koy" in v:
+                    col_map.setdefault("koy", c)
+                elif v == "urun" or "urunadi" in v:
+                    col_map.setdefault("urun", c)
+                elif "isletmesayisi" in v or v == "isletme":
+                    col_map.setdefault("isletme_sayisi", c)
+                elif "destekleme" in v and "alan" in v:
+                    col_map.setdefault("destekleme_alani_da", c)
+                elif "destekleme" in v and ("miktar" in v or "tutar" in v):
+                    col_map.setdefault("destekleme_miktari_tl", c)
+            break
+
+    if header_row is None:
+        return [], il_adi, ilce_adi, {}
+
+    # ── 3. Veri satırlarını oku ────────────────────────────────────
+    rows: list[dict] = []
+    toplam: dict = {}
+
+    for r in range(header_row + 1, nrows):
+        koy_val  = _cell_str(r, col_map.get("koy",  -1))
+        urun_val = _cell_str(r, col_map.get("urun", -1))
+        il_val   = _cell_str(r, col_map.get("il",   -1)) or il_adi
+        ilce_val = _cell_str(r, col_map.get("ilce", -1)) or ilce_adi
+
+        if not koy_val:
+            continue
+
+        # TOPLAM satırını yakala, kaydetme
+        if any(kw in koy_val.upper() for kw in ("TOPLAM", "GENEL")):
+            toplam = {
+                "isletme_sayisi":        _int_cell(r, col_map.get("isletme_sayisi",        -1)),
+                "destekleme_alani_da":   _num_cell(r, col_map.get("destekleme_alani_da",   -1)),
+                "destekleme_miktari_tl": _num_cell(r, col_map.get("destekleme_miktari_tl", -1)),
+            }
+            continue
+
+        # Ürün sütunu boşsa bir önceki satırın ürününü kullanma — atla
+        if not urun_val:
+            # Bazen toplam satırında ürün C9'da olabilir
+            urun_val = _cell_str(r, col_map.get("urun", -1))
+        if not urun_val:
+            continue
+
+        if any(kw in urun_val.upper() for kw in ("TOPLAM", "GENEL")):
+            continue
+
+        rows.append({
+            "yil":                  yil,
+            "il":                   il_val.upper(),
+            "ilce":                 ilce_val.upper(),
+            "koy":                  koy_val.upper(),
+            "urun":                 urun_val.upper(),
+            "isletme_sayisi":       _int_cell(r, col_map.get("isletme_sayisi",        -1)),
+            "destekleme_alani_da":  _num_cell(r, col_map.get("destekleme_alani_da",   -1)),
+            "destekleme_miktari_tl":_num_cell(r, col_map.get("destekleme_miktari_tl", -1)),
+        })
+
+    return rows, il_adi, ilce_adi, toplam
+
+
+# ═══════════════════════════════════════════════════════════
+# TEMEL DESTEK — XLS (İCMAL-2, köy/mahalle detay)
+# ═══════════════════════════════════════════════════════════
+
+def parse_temel_destek_xls(content: bytes, yil: int) -> tuple[list[dict], str, str, dict]:
+    """
+    İCMAL-2 formatındaki Temel Destek XLS dosyasını parse eder.
+
+    Sütunlar: Sıra No | İl | İlçe | Mahalle/Köy | Ürün/Ürün Grubu |
+              İşletme Sayısı | Desteğe Tabi Alan (da) | Destekleme Miktarı (TL)
+
+    Returns (rows, il_adi, ilce_adi, toplam)
+    """
+    try:
+        import xlrd as _xlrd
+    except ImportError:
+        return [], "", "", {}
+
+    try:
+        wb = _xlrd.open_workbook(file_contents=content)
+    except Exception:
+        return [], "", "", {}
+
+    sh = wb.sheets()[0]
+    nrows, ncols = sh.nrows, sh.ncols
+
+    def _cell_str(r: int, c: int) -> str:
+        try:
+            v = sh.cell_value(r, c)
+            if v is None:
+                return ""
+            return str(v).strip().strip("'\"")
+        except Exception:
+            return ""
+
+    def _cell_num(r: int, c: int) -> float:
+        try:
+            v = sh.cell_value(r, c)
+            if sh.cell_type(r, c) == _xlrd.XL_CELL_NUMBER:
+                return float(v)
+            return float(str(v).strip().strip("'\""))
+        except Exception:
+            return 0.0
+
+    def _int_cell(r: int, c: int) -> int:
+        try:
+            return max(0, int(_cell_num(r, c)))
+        except Exception:
+            return 0
+
+    def _num_cell(r: int, c: int) -> float:
+        return round(_cell_num(r, c), 3)
+
+    # ── 1. Metadata: il / ilçe ─────────────────────────────────────
+    il_adi = "BURDUR"
+    ilce_adi = ""
+    for r in range(min(25, nrows)):
+        for c in range(ncols):
+            raw = _cell_str(r, c)
+            if not raw or ":" not in raw:
+                continue
+            norm = _tr_norm(raw)
+            key = norm.partition(":")[0].strip()
+            val = raw.split(":", 1)[1].strip().upper()
+            if key == "il":
+                il_adi = val
+            elif key in ("ilce", "ilc"):
+                ilce_adi = val
+
+    # ── 2. Başlık satırını bul ──────────────────────────────────────
+    # Aranacak: 'ilce' + 'urun' + 'isletme' içeren satır
+    header_row = None
+    col_map: dict[str, int] = {}
+
+    for r in range(min(25, nrows)):
+        vn = {c: _tr_norm(_cell_str(r, c)) for c in range(ncols)}
+        has_ilce    = any(v == "ilce" for v in vn.values())
+        has_urun    = any("urun" in v for v in vn.values())
+        has_isletme = any("isletme" in v for v in vn.values())
+
+        if has_ilce and has_urun and has_isletme:
+            header_row = r
+            for c, v in vn.items():
+                if v == "il":
+                    col_map.setdefault("il", c)
+                elif v == "ilce":
+                    col_map.setdefault("ilce", c)
+                elif "mahalle" in v or "koy" in v:
+                    col_map.setdefault("koy", c)
+                elif "urun" in v:
+                    col_map.setdefault("urun_grubu", c)
+                elif "isletmesayisi" in v or v == "isletme":
+                    col_map.setdefault("isletme_sayisi", c)
+                elif "destegetabi" in v and "alan" in v:
+                    col_map.setdefault("destege_tabi_alan_da", c)
+                elif "destekleme" in v and ("miktar" in v or "tutar" in v):
+                    col_map.setdefault("destekleme_miktari_tl", c)
+            break
+
+    if header_row is None:
+        return [], il_adi, ilce_adi, {}
+
+    # ── 3. Veri satırlarını oku ────────────────────────────────────
+    rows: list[dict] = []
+    toplam: dict = {}
+
+    for r in range(header_row + 1, nrows):
+        koy_val  = _cell_str(r, col_map.get("koy",  -1))
+        urun_val = _cell_str(r, col_map.get("urun_grubu", -1))
+        il_val   = _cell_str(r, col_map.get("il",   -1)) or il_adi
+        ilce_val = _cell_str(r, col_map.get("ilce", -1)) or ilce_adi
+
+        if not koy_val:
+            continue
+
+        # TOPLAM satırını yakala, kaydetme
+        if any(kw in koy_val.upper() for kw in ("TOPLAM", "GENEL")):
+            toplam = {
+                "isletme_sayisi":       _int_cell(r, col_map.get("isletme_sayisi",       -1)),
+                "destege_tabi_alan_da": _num_cell(r, col_map.get("destege_tabi_alan_da", -1)),
+                "destekleme_miktari_tl":_num_cell(r, col_map.get("destekleme_miktari_tl",-1)),
+            }
+            continue
+
+        if not urun_val or any(kw in urun_val.upper() for kw in ("TOPLAM", "GENEL")):
+            continue
+
+        rows.append({
+            "yil":                   yil,
+            "il":                    il_val.upper(),
+            "ilce":                  ilce_val.upper(),
+            "koy":                   koy_val.upper(),
+            "urun_grubu":            urun_val,
+            "isletme_sayisi":        _int_cell(r, col_map.get("isletme_sayisi",        -1)),
+            "destege_tabi_alan_da":  _num_cell(r, col_map.get("destege_tabi_alan_da",  -1)),
+            "destekleme_miktari_tl": _num_cell(r, col_map.get("destekleme_miktari_tl", -1)),
+        })
+
+    return rows, il_adi, ilce_adi, toplam
+
+
+# ═══════════════════════════════════════════════════════════
+# YEM BİTKİLERİ DESTEĞİ — XLS (İCMAL-2, köy/mahalle detay)
+# ═══════════════════════════════════════════════════════════
+
+def parse_yem_bitkileri_xls(content: bytes, yil: int) -> tuple[list[dict], str, str, dict]:
+    """
+    İCMAL-2 formatındaki Yem Bitkileri Desteği XLS dosyasını parse eder.
+
+    Sütunlar: Sıra No | İl | İlçe | Mahalle/Köy | İşletme Sayısı | Ürün |
+              Desteğe Tabi Alan (da) | Su Kısıtı | Süt Havzası | Destek Tutarı (TL)
+
+    Returns (rows, il_adi, ilce_adi, toplam)
+    """
+    try:
+        import xlrd as _xlrd
+    except ImportError:
+        return [], "", "", {}
+
+    try:
+        wb = _xlrd.open_workbook(file_contents=content)
+    except Exception:
+        return [], "", "", {}
+
+    sh = wb.sheets()[0]
+    nrows, ncols = sh.nrows, sh.ncols
+
+    def _cell_str(r: int, c: int) -> str:
+        try:
+            v = sh.cell_value(r, c)
+            if v is None:
+                return ""
+            return str(v).strip().strip("'\"")
+        except Exception:
+            return ""
+
+    def _cell_num(r: int, c: int) -> float:
+        try:
+            v = sh.cell_value(r, c)
+            if sh.cell_type(r, c) == _xlrd.XL_CELL_NUMBER:
+                return float(v)
+            return float(str(v).strip().strip("'\""))
+        except Exception:
+            return 0.0
+
+    def _int_cell(r: int, c: int) -> int:
+        try:
+            return max(0, int(_cell_num(r, c)))
+        except Exception:
+            return 0
+
+    def _num_cell(r: int, c: int) -> float:
+        return round(_cell_num(r, c), 3)
+
+    # ── 1. Metadata: il / ilçe ─────────────────────────────────────
+    il_adi = "BURDUR"
+    ilce_adi = ""
+    for r in range(min(25, nrows)):
+        for c in range(ncols):
+            raw = _cell_str(r, c)
+            if not raw or ":" not in raw:
+                continue
+            norm = _tr_norm(raw)
+            key = norm.partition(":")[0].strip()
+            val = raw.split(":", 1)[1].strip().upper()
+            if key == "il":
+                il_adi = val
+            elif key in ("ilce", "ilc"):
+                ilce_adi = val
+
+    # ── 2. Başlık satırını bul ──────────────────────────────────────
+    # Aranacak: 'ilce' + 'urun' + 'isletme' içeren satır
+    header_row = None
+    col_map: dict[str, int] = {}
+
+    for r in range(min(25, nrows)):
+        vn = {c: _tr_norm(_cell_str(r, c)) for c in range(ncols)}
+        has_ilce    = any(v == "ilce" for v in vn.values())
+        has_urun    = any(v == "urun" for v in vn.values())
+        has_isletme = any("isletme" in v for v in vn.values())
+
+        if has_ilce and has_urun and has_isletme:
+            header_row = r
+            for c, v in vn.items():
+                if v == "il":
+                    col_map.setdefault("il", c)
+                elif v == "ilce":
+                    col_map.setdefault("ilce", c)
+                elif "mahalle" in v or "koy" in v:
+                    col_map.setdefault("koy", c)
+                elif v == "urun":
+                    col_map.setdefault("urun", c)
+                elif "isletmesayisi" in v or v == "isletme":
+                    col_map.setdefault("isletme_sayisi", c)
+                elif "destegetabi" in v and "alan" in v:
+                    col_map.setdefault("destege_tabi_alan_da", c)
+                elif "sukisiti" in v or "yeralti" in v:
+                    col_map.setdefault("su_kisiti_da", c)
+                elif "suthavzasi" in v:
+                    col_map.setdefault("sut_havzasi_da", c)
+                elif "destek" in v and ("tutar" in v or "miktar" in v):
+                    col_map.setdefault("destek_tutari_tl", c)
+            break
+
+    if header_row is None:
+        return [], il_adi, ilce_adi, {}
+
+    # ── 3. Veri satırlarını oku ────────────────────────────────────
+    rows: list[dict] = []
+    toplam: dict = {}
+
+    for r in range(header_row + 1, nrows):
+        koy_val  = _cell_str(r, col_map.get("koy",  -1))
+        urun_val = _cell_str(r, col_map.get("urun", -1))
+        il_val   = _cell_str(r, col_map.get("il",   -1)) or il_adi
+        ilce_val = _cell_str(r, col_map.get("ilce", -1)) or ilce_adi
+
+        if not koy_val:
+            continue
+
+        # TOPLAM / GENEL TOPLAM satırını yakala
+        if any(kw in koy_val.upper() for kw in ("TOPLAM", "GENEL")):
+            toplam = {
+                "isletme_sayisi":     _int_cell(r, col_map.get("isletme_sayisi",      -1)),
+                "destege_tabi_alan_da": _num_cell(r, col_map.get("destege_tabi_alan_da", -1)),
+                "su_kisiti_da":        _num_cell(r, col_map.get("su_kisiti_da",         -1)),
+                "sut_havzasi_da":      _num_cell(r, col_map.get("sut_havzasi_da",       -1)),
+                "destek_tutari_tl":    _num_cell(r, col_map.get("destek_tutari_tl",     -1)),
+            }
+            continue
+
+        if not urun_val or any(kw in urun_val.upper() for kw in ("TOPLAM", "GENEL")):
+            continue
+
+        rows.append({
+            "yil":                  yil,
+            "il":                   il_val.upper(),
+            "ilce":                 ilce_val.upper(),
+            "koy":                  koy_val.upper(),
+            "urun":                 urun_val.upper(),
+            "isletme_sayisi":       _int_cell(r, col_map.get("isletme_sayisi",       -1)),
+            "destege_tabi_alan_da": _num_cell(r, col_map.get("destege_tabi_alan_da", -1)),
+            "su_kisiti_da":         _num_cell(r, col_map.get("su_kisiti_da",         -1)),
+            "sut_havzasi_da":       _num_cell(r, col_map.get("sut_havzasi_da",       -1)),
+            "destek_tutari_tl":     _num_cell(r, col_map.get("destek_tutari_tl",     -1)),
+        })
+
+    return rows, il_adi, ilce_adi, toplam
+
+
+# ═══════════════════════════════════════════════════════════
+# ZİRAİ DON DESTEĞİ — XLS (İCMAL-2, köy/mahalle detay)
+# ═══════════════════════════════════════════════════════════
+
+def parse_zirai_don_xls(content: bytes, yil: int) -> tuple[list[dict], str, str, dict]:
+    """
+    İCMAL-2 formatındaki Zirai Don Desteği XLS dosyasını parse eder.
+
+    Sütunlar (geniş merge yapısı):
+      Sıra No(C0) | İl(C3) | İlçe(C7) | Mahalle/Köy(C9) | Ürün(C13) |
+      İşletme Sayısı(C16) | Hasar Oranı %(C18) | Birim Maliyet TL(C19) |
+      Etkilenen Alan da(C22) | Toplam Masraf Tutarı TL(C26)
+
+    Returns (rows, il_adi, ilce_adi, toplam)
+    """
+    try:
+        import xlrd as _xlrd
+    except ImportError:
+        return [], "", "", {}
+
+    try:
+        wb = _xlrd.open_workbook(file_contents=content)
+    except Exception:
+        return [], "", "", {}
+
+    sh = wb.sheets()[0]
+    nrows, ncols = sh.nrows, sh.ncols
+
+    def _cell_str(r: int, c: int) -> str:
+        try:
+            v = sh.cell_value(r, c)
+            if v is None:
+                return ""
+            return str(v).strip().strip("'\"")
+        except Exception:
+            return ""
+
+    def _cell_num(r: int, c: int) -> float:
+        try:
+            v = sh.cell_value(r, c)
+            if sh.cell_type(r, c) == _xlrd.XL_CELL_NUMBER:
+                return float(v)
+            return float(str(v).strip().strip("'\""))
+        except Exception:
+            return 0.0
+
+    def _int_cell(r: int, c: int) -> int:
+        try:
+            return max(0, int(_cell_num(r, c)))
+        except Exception:
+            return 0
+
+    def _num_cell(r: int, c: int) -> float:
+        return round(_cell_num(r, c), 3)
+
+    # ── 1. Metadata: il / ilçe ─────────────────────────────────────
+    il_adi = "BURDUR"
+    ilce_adi = ""
+    for r in range(min(20, nrows)):
+        for c in range(ncols):
+            raw = _cell_str(r, c)
+            if not raw or ":" not in raw:
+                continue
+            norm = _tr_norm(raw)
+            key = norm.partition(":")[0].strip()
+            val = raw.split(":", 1)[1].strip().upper()
+            if key == "il":
+                il_adi = val
+            elif key in ("ilce", "ilc"):
+                ilce_adi = val
+
+    # ── 2. Başlık satırını bul ──────────────────────────────────────
+    # Aranacak: 'ilce' + 'urun' + 'isletme' + 'etkilenen' içeren satır
+    header_row = None
+    col_map: dict[str, int] = {}
+
+    for r in range(min(20, nrows)):
+        vn = {c: _tr_norm(_cell_str(r, c)) for c in range(ncols)}
+        has_ilce      = any(v == "ilce" for v in vn.values())
+        has_urun      = any(v == "urun" for v in vn.values())
+        has_etkilenen = any("etkilenen" in v for v in vn.values())
+
+        if has_ilce and has_urun and has_etkilenen:
+            header_row = r
+            for c, v in vn.items():
+                if v == "il":
+                    col_map.setdefault("il", c)
+                elif v == "ilce":
+                    col_map.setdefault("ilce", c)
+                elif "mahalle" in v or "koy" in v:
+                    col_map.setdefault("koy", c)
+                elif v == "urun":
+                    col_map.setdefault("urun", c)
+                elif "isletmesayisi" in v:
+                    col_map.setdefault("isletme_sayisi", c)
+                elif "ortalamahasar" in v or "hasarorani" in v:
+                    col_map.setdefault("hasar_orani_yuzde", c)
+                elif "birimmaliyet" in v:
+                    col_map.setdefault("birim_maliyet_tl", c)
+                elif "etkilenen" in v and "alan" in v:
+                    col_map.setdefault("etkilenen_alan_da", c)
+                elif "toplammasraf" in v or ("toplam" in v and "tutar" in v):
+                    col_map.setdefault("toplam_masraf_tl", c)
+            break
+
+    if header_row is None:
+        return [], il_adi, ilce_adi, {}
+
+    # ── 3. Veri satırlarını oku ────────────────────────────────────
+    rows: list[dict] = []
+    toplam: dict = {}
+
+    for r in range(header_row + 1, nrows):
+        koy_val  = _cell_str(r, col_map.get("koy",  -1))
+        urun_val = _cell_str(r, col_map.get("urun", -1))
+        il_val   = _cell_str(r, col_map.get("il",   -1)) or il_adi
+        ilce_val = _cell_str(r, col_map.get("ilce", -1)) or ilce_adi
+
+        if not koy_val:
+            continue
+
+        # TOPLAM satırı
+        if any(kw in koy_val.upper() for kw in ("TOPLAM", "GENEL")):
+            toplam = {
+                "isletme_sayisi":    _int_cell(r, col_map.get("isletme_sayisi",    -1)),
+                "etkilenen_alan_da": _num_cell(r, col_map.get("etkilenen_alan_da", -1)),
+                "toplam_masraf_tl":  _num_cell(r, col_map.get("toplam_masraf_tl",  -1)),
+            }
+            continue
+
+        if not urun_val or any(kw in urun_val.upper() for kw in ("TOPLAM", "GENEL")):
+            continue
+
+        rows.append({
+            "yil":                yil,
+            "il":                 il_val.upper(),
+            "ilce":               ilce_val.upper(),
+            "koy":                koy_val.upper(),
+            "urun":               urun_val.upper(),
+            "isletme_sayisi":     _int_cell(r, col_map.get("isletme_sayisi",    -1)),
+            "hasar_orani_yuzde":  round(_cell_num(r, col_map.get("hasar_orani_yuzde", -1)), 2),
+            "birim_maliyet_tl":   round(_cell_num(r, col_map.get("birim_maliyet_tl",  -1)), 2),
+            "etkilenen_alan_da":  _num_cell(r, col_map.get("etkilenen_alan_da",  -1)),
+            "toplam_masraf_tl":   round(_cell_num(r, col_map.get("toplam_masraf_tl",  -1)), 2),
+        })
+
+    return rows, il_adi, ilce_adi, toplam

@@ -12,7 +12,7 @@ type Category =
   | 'uretim' | 'hayvancilik' | 'kooperatif' | 'sut'
   | 'alan-bazli' | 'fark-prim' | 'hayv-destek'
   | 'cks-sayisi' | 'genel-destek' | 'bitkisel-destek'
-  | 'planli-uretim' | 'sertifikali-fidan';
+  | 'planli-uretim' | 'sertifikali-fidan' | 'sertifikali-tohum' | 'temel-destek' | 'yem-bitkileri' | 'zirai-don';
 
 // 'duplikat' yeni özel durum — hata sayılmaz, uyarı olarak gösterilir
 type FileStatus = 'bekliyor' | 'yukleniyor' | 'tamam' | 'hata' | 'duplikat';
@@ -37,6 +37,10 @@ const CATS: { id: Category; icon: string; label: string; desc: string; accept: s
   { id: 'bitkisel-destek',  icon: '🌿', label: 'Bitkisel Destekler',        desc: 'Feromon/Biyolojik .xls icmal dosyaları',  accept: '.xls,.xlsx,.xlsm' },
   { id: 'planli-uretim',    icon: '📋', label: 'Planlı Üretim Desteği',     desc: 'İlçe bazlı İCMAL-2 .xls dosyaları',      accept: '.xls,.xlsx,.xlsm' },
   { id: 'sertifikali-fidan',icon: '🌱', label: 'Sertifikalı Fidan Desteği', desc: 'İCMAL-2 fidan kullanım .xls dosyaları',  accept: '.xls,.xlsx,.xlsm' },
+  { id: 'sertifikali-tohum',icon: '🌾', label: 'Sertifikalı Tohum Desteği', desc: 'İCMAL-2 tohum kullanım .xls dosyaları',  accept: '.xls,.xlsx,.xlsm' },
+  { id: 'temel-destek',      icon: '🌱', label: 'Temel Destek',                 desc: 'İCMAL-2 temel destek .xls dosyaları',    accept: '.xls,.xlsx,.xlsm' },
+  { id: 'yem-bitkileri',     icon: '🌿', label: 'Yem Bitkileri Desteği',          desc: 'İCMAL-2 yem bitkileri .xls dosyaları',   accept: '.xls,.xlsx,.xlsm' },
+  { id: 'zirai-don',         icon: '❄️', label: 'Zirai Don Desteği',              desc: 'İCMAL-2 zirai don .xls dosyaları',       accept: '.xls,.xlsx,.xlsm' },
 ];
 
 const STATUS_ICON: Record<FileStatus, string> = {
@@ -134,6 +138,10 @@ export default function ImportModal({ onClose, onDone }: Props) {
           case 'bitkisel-destek':  res = await api.importBitkiselDestek(files[i], year);      break;
           case 'planli-uretim':    res = await api.importPlanliUretim(files[i], year);        break;
           case 'sertifikali-fidan':res = await api.importSertifikaliFidan(files[i], year);    break;
+          case 'sertifikali-tohum': res = await api.importSertifikaliTohum(files[i], year);    break;
+          case 'temel-destek':      res = await api.importTemelDestek(files[i], year);       break;
+          case 'yem-bitkileri':      res = await api.importYemBitkileri(files[i], year);    break;
+          case 'zirai-don':          res = await api.importZiraiDon(files[i], year);        break;
           default:                 res = await api.importExcel(files[i], year);
         }
         setResults(prev => prev.map((r, idx) =>
@@ -171,7 +179,7 @@ export default function ImportModal({ onClose, onDone }: Props) {
 
   return (
     <div className="im-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="im-box">
+      <div className="im-box" style={{ width: 'min(720px, 96vw)', maxHeight: '96vh', display: 'flex', flexDirection: 'column' }}>
 
         {/* Başlık */}
         <div className="im-head">
@@ -203,26 +211,26 @@ export default function ImportModal({ onClose, onDone }: Props) {
         </div>
 
         {/* Gövde */}
-        <div className="im-body">
+        <div className="im-body" style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 220px)' }}>
 
           {/* ADIM 1: Kategori */}
           {step === 1 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
               {CATS.map(c => (
                 <button
                   key={c.id}
                   onClick={() => setCat(c.id)}
                   style={{
-                    padding: '9px 10px', border: '1.5px solid',
+                    padding: '7px 8px', border: '1.5px solid',
                     borderColor: cat === c.id ? 'var(--gm)' : 'var(--br2)',
-                    borderRadius: 8, background: cat === c.id ? 'var(--gp)' : '#fff',
+                    borderRadius: 7, background: cat === c.id ? 'var(--gp)' : '#fff',
                     cursor: 'pointer', textAlign: 'left', transition: 'all .12s',
                     fontFamily: 'inherit',
                   }}
                 >
-                  <div style={{ fontSize: 15, marginBottom: 3 }}>{c.icon}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tx)', lineHeight: 1.3 }}>{c.label}</div>
-                  <div style={{ fontSize: 9.5, color: 'var(--mu)', marginTop: 2 }}>{c.desc}</div>
+                  <div style={{ fontSize: 13, marginBottom: 2 }}>{c.icon}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--tx)', lineHeight: 1.3 }}>{c.label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--mu)', marginTop: 1 }}>{c.desc}</div>
                 </button>
               ))}
             </div>

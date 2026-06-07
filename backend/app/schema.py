@@ -184,6 +184,82 @@ TABLES: list[str] = [
         updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
     )""",
 
+
+
+    # ── Temel Destek (İCMAL-2, köy/mahalle detay) ───────────────────
+    # Her satır: bir ilçe-köy-ürün kombinasyonunun temel destek özeti
+    # UNIQUE: aynı yıl-ilçe-köy-ürün_grubu kombinasyonu tek satır
+    """CREATE TABLE IF NOT EXISTS temel_destek (
+        id                      SERIAL        PRIMARY KEY,
+        yil                     SMALLINT      NOT NULL,
+        il                      VARCHAR(60)   NOT NULL DEFAULT 'BURDUR',
+        ilce                    VARCHAR(60)   NOT NULL,
+        koy                     VARCHAR(120)  NOT NULL,
+        urun_grubu              VARCHAR(120)  NOT NULL,
+        isletme_sayisi          INTEGER       NOT NULL DEFAULT 0,
+        destege_tabi_alan_da    NUMERIC(14,3) NOT NULL DEFAULT 0,
+        destekleme_miktari_tl   NUMERIC(16,2) NOT NULL DEFAULT 0,
+        created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )""",
+
+    # ── Sertifikalı Tohum Kullanım Desteği (İCMAL-2) ────────────────
+    # Tohum desteği: fidan'dan farklı — ürün, işletme sayısı, destekleme alanı/miktarı
+    # UNIQUE: aynı yıl-ilçe-köy-ürün kombinasyonu tek satır (ON CONFLICT upsert)
+    """CREATE TABLE IF NOT EXISTS sertifikali_tohum_destek (
+        id                      SERIAL        PRIMARY KEY,
+        yil                     SMALLINT      NOT NULL,
+        il                      VARCHAR(60)   NOT NULL DEFAULT 'BURDUR',
+        ilce                    VARCHAR(60)   NOT NULL,
+        koy                     VARCHAR(120)  NOT NULL,
+        urun                    VARCHAR(120)  NOT NULL DEFAULT '',
+        isletme_sayisi          INTEGER       NOT NULL DEFAULT 0,
+        destekleme_alani_da     NUMERIC(14,3) NOT NULL DEFAULT 0,
+        destekleme_miktari_tl   NUMERIC(16,2) NOT NULL DEFAULT 0,
+        created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )""",
+
+
+    # ── Yem Bitkileri Desteği (İCMAL-2, köy/mahalle detay) ──────────
+    # Planlı Üretim Desteği'nin yem bitkileri alt kümesi
+    # Su kısıtı ve süt havzası ek sütunları içerir
+    # UNIQUE: aynı yıl-ilçe-köy-ürün kombinasyonu tek satır
+    """CREATE TABLE IF NOT EXISTS yem_bitkileri_destek (
+        id                      SERIAL        PRIMARY KEY,
+        yil                     SMALLINT      NOT NULL,
+        il                      VARCHAR(60)   NOT NULL DEFAULT 'BURDUR',
+        ilce                    VARCHAR(60)   NOT NULL,
+        koy                     VARCHAR(120)  NOT NULL,
+        urun                    VARCHAR(120)  NOT NULL,
+        isletme_sayisi          INTEGER       NOT NULL DEFAULT 0,
+        destege_tabi_alan_da    NUMERIC(14,3) NOT NULL DEFAULT 0,
+        su_kisiti_da            NUMERIC(14,3) NOT NULL DEFAULT 0,
+        sut_havzasi_da          NUMERIC(14,3) NOT NULL DEFAULT 0,
+        destek_tutari_tl        NUMERIC(16,2) NOT NULL DEFAULT 0,
+        created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )""",
+
+
+    # ── Zirai Don Desteği (İCMAL-2, köy/mahalle detay) ──────────────
+    # UNIQUE: aynı yıl-ilçe-köy-ürün kombinasyonu tek satır
+    """CREATE TABLE IF NOT EXISTS zirai_don_destek (
+        id                      SERIAL        PRIMARY KEY,
+        yil                     SMALLINT      NOT NULL,
+        il                      VARCHAR(60)   NOT NULL DEFAULT 'BURDUR',
+        ilce                    VARCHAR(60)   NOT NULL,
+        koy                     VARCHAR(120)  NOT NULL,
+        urun                    VARCHAR(120)  NOT NULL,
+        isletme_sayisi          INTEGER       NOT NULL DEFAULT 0,
+        hasar_orani_yuzde       NUMERIC(5,2)  NOT NULL DEFAULT 0,
+        birim_maliyet_tl        NUMERIC(10,2) NOT NULL DEFAULT 0,
+        etkilenen_alan_da       NUMERIC(14,3) NOT NULL DEFAULT 0,
+        toplam_masraf_tl        NUMERIC(16,2) NOT NULL DEFAULT 0,
+        created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    )""",
+
     # ── ÇKS çiftçi kayıt sayıları ────────────────────────────────────
     # uretim tablosuyla JOIN için: ciftci_sayisi = cks_sayisi.sayi
     """CREATE TABLE IF NOT EXISTS cks_sayisi (
@@ -261,6 +337,30 @@ INDEXES: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_pud_yil        ON planli_uretim_destek(yil)",
     "CREATE INDEX IF NOT EXISTS idx_pud_ilce       ON planli_uretim_destek(ilce)",
     "CREATE INDEX IF NOT EXISTS idx_pud_ilce_koy   ON planli_uretim_destek(ilce, koy)",
+
+    # temel_destek
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_td_unique ON temel_destek(yil, ilce, koy, urun_grubu)",
+    "CREATE INDEX IF NOT EXISTS idx_td_yil        ON temel_destek(yil)",
+    "CREATE INDEX IF NOT EXISTS idx_td_ilce       ON temel_destek(ilce)",
+    "CREATE INDEX IF NOT EXISTS idx_td_ilce_koy   ON temel_destek(ilce, koy)",
+
+    # sertifikali_tohum_destek
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_std_unique ON sertifikali_tohum_destek(yil, ilce, koy, urun)",
+    "CREATE INDEX IF NOT EXISTS idx_std_yil        ON sertifikali_tohum_destek(yil)",
+    "CREATE INDEX IF NOT EXISTS idx_std_ilce       ON sertifikali_tohum_destek(ilce)",
+    "CREATE INDEX IF NOT EXISTS idx_std_ilce_koy   ON sertifikali_tohum_destek(ilce, koy)",
+
+    # yem_bitkileri_destek
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_ybd_unique ON yem_bitkileri_destek(yil, ilce, koy, urun)",
+    "CREATE INDEX IF NOT EXISTS idx_ybd_yil        ON yem_bitkileri_destek(yil)",
+    "CREATE INDEX IF NOT EXISTS idx_ybd_ilce       ON yem_bitkileri_destek(ilce)",
+    "CREATE INDEX IF NOT EXISTS idx_ybd_ilce_koy   ON yem_bitkileri_destek(ilce, koy)",
+
+    # zirai_don_destek
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_zdd_unique ON zirai_don_destek(yil, ilce, koy, urun)",
+    "CREATE INDEX IF NOT EXISTS idx_zdd_yil        ON zirai_don_destek(yil)",
+    "CREATE INDEX IF NOT EXISTS idx_zdd_ilce       ON zirai_don_destek(ilce)",
+    "CREATE INDEX IF NOT EXISTS idx_zdd_ilce_koy   ON zirai_don_destek(ilce, koy)",
 
     # cks_sayisi — uretim JOIN'i için bileşik index
     "CREATE INDEX IF NOT EXISTS idx_cks_yil    ON cks_sayisi(yil)",

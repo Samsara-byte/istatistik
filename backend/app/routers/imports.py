@@ -24,6 +24,10 @@ from app.excel import (
     parse_ozet_xls,
     parse_planli_uretim_xls,
     parse_sertifikali_fidan_xls,
+    parse_sertifikali_tohum_xls,
+    parse_temel_destek_xls,
+    parse_yem_bitkileri_xls,
+    parse_zirai_don_xls,
     parse_sut_xlsx,
     parse_uretim_xlsx,
 )
@@ -614,3 +618,310 @@ async def import_sertifikali_fidan(
         "silinen":     silinen,
         "sure_sn":     sure,
     }
+
+
+# ── Sertifikalı Tohum Kullanım Desteği ───────────────────────────────
+
+@router.post("/sertifikali-tohum")
+async def import_sertifikali_tohum(
+    file:     UploadFile    = File(...),
+    yil:      Optional[str] = Form(None),
+    truncate: Optional[str] = Form("false"),
+    db:       AsyncSession  = Depends(get_db),
+):
+    """
+    İCMAL-2 formatındaki Sertifikalı Tohum Kullanım Desteği XLS dosyasını yükler.
+    UNIQUE (yil, ilce, koy, urun) çakışmasında upsert yapar.
+    """
+    check_extension(file.filename or "", {"xls", "xlsx", "xlsm"})
+    content   = await file.read()
+    file_hash = sha256(content)
+    await _guard_duplicate(db, file_hash, file.filename or "")
+
+    final_yil          = yil_from(yil, file.filename or "")
+    rows, il_adi, ilce_adi, _toplam = parse_sertifikali_tohum_xls(content, final_yil)
+    if not rows:
+        raise NoValidDataError()
+
+    t0 = time.perf_counter()
+    eklenen = guncellenen = silinen = 0
+
+    async with db.begin_nested():
+        if truncate != "false" and ilce_adi:
+            r = await db.execute(
+                text("DELETE FROM sertifikali_tohum_destek WHERE yil = :y AND ilce = :i"),
+                {"y": final_yil, "i": ilce_adi},
+            )
+            silinen = r.rowcount
+        elif truncate != "false":
+            r = await db.execute(
+                text("DELETE FROM sertifikali_tohum_destek WHERE yil = :y"),
+                {"y": final_yil},
+            )
+            silinen = r.rowcount
+
+        for row in rows:
+            result = await db.execute(
+                text("""
+                    INSERT INTO sertifikali_tohum_destek
+                        (yil, il, ilce, koy, urun,
+                         isletme_sayisi, destekleme_alani_da,
+                         destekleme_miktari_tl, updated_at)
+                    VALUES
+                        (:yil, :il, :ilce, :koy, :urun,
+                         :isletme_sayisi, :destekleme_alani_da,
+                         :destekleme_miktari_tl, NOW())
+                    ON CONFLICT (yil, ilce, koy, urun) DO UPDATE SET
+                        isletme_sayisi        = EXCLUDED.isletme_sayisi,
+                        destekleme_alani_da   = EXCLUDED.destekleme_alani_da,
+                        destekleme_miktari_tl = EXCLUDED.destekleme_miktari_tl,
+                        updated_at            = NOW()
+                """),
+                row,
+            )
+            if result.rowcount == 1:
+                eklenen += 1
+            else:
+                guncellenen += 1
+
+        sure = round(time.perf_counter() - t0, 2)
+        await write_import_log(
+            db, dosya_adi=file.filename or "", dosya_hash=file_hash,
+            ilce=ilce_adi or None, yil=final_yil,
+            kayit_sayisi=len(rows), silinen=silinen, sure_sn=sure,
+        )
+
+    await db.commit()
+    return {
+        "ok":          True,
+        "yil":         final_yil,
+        "ilce":        ilce_adi,
+        "eklenen":     eklenen,
+        "guncellenen": guncellenen,
+        "silinen":     silinen,
+        "sure_sn":     sure,
+    }
+
+
+# ── Temel Destek ─────────────────────────────────────────────────────
+
+@router.post("/temel-destek")
+async def import_temel_destek(
+    file:     UploadFile    = File(...),
+    yil:      Optional[str] = Form(None),
+    truncate: Optional[str] = Form("false"),
+    db:       AsyncSession  = Depends(get_db),
+):
+    """
+    İCMAL-2 formatındaki Temel Destek XLS dosyasını yükler.
+    UNIQUE (yil, ilce, koy, urun_grubu) çakışmasında upsert yapar.
+    """
+    check_extension(file.filename or "", {"xls", "xlsx", "xlsm"})
+    content   = await file.read()
+    file_hash = sha256(content)
+    await _guard_duplicate(db, file_hash, file.filename or "")
+
+    final_yil          = yil_from(yil, file.filename or "")
+    rows, il_adi, ilce_adi, _toplam = parse_temel_destek_xls(content, final_yil)
+    if not rows:
+        raise NoValidDataError()
+
+    t0 = time.perf_counter()
+    eklenen = guncellenen = silinen = 0
+
+    async with db.begin_nested():
+        if truncate != "false" and ilce_adi:
+            r = await db.execute(
+                text("DELETE FROM temel_destek WHERE yil = :y AND ilce = :i"),
+                {"y": final_yil, "i": ilce_adi},
+            )
+            silinen = r.rowcount
+        elif truncate != "false":
+            r = await db.execute(
+                text("DELETE FROM temel_destek WHERE yil = :y"), {"y": final_yil}
+            )
+            silinen = r.rowcount
+
+        for row in rows:
+            result = await db.execute(
+                text("""
+                    INSERT INTO temel_destek
+                        (yil, il, ilce, koy, urun_grubu,
+                         isletme_sayisi, destege_tabi_alan_da,
+                         destekleme_miktari_tl, updated_at)
+                    VALUES
+                        (:yil, :il, :ilce, :koy, :urun_grubu,
+                         :isletme_sayisi, :destege_tabi_alan_da,
+                         :destekleme_miktari_tl, NOW())
+                    ON CONFLICT (yil, ilce, koy, urun_grubu) DO UPDATE SET
+                        isletme_sayisi        = EXCLUDED.isletme_sayisi,
+                        destege_tabi_alan_da  = EXCLUDED.destege_tabi_alan_da,
+                        destekleme_miktari_tl = EXCLUDED.destekleme_miktari_tl,
+                        updated_at            = NOW()
+                """),
+                row,
+            )
+            if result.rowcount == 1:
+                eklenen += 1
+            else:
+                guncellenen += 1
+
+        sure = round(time.perf_counter() - t0, 2)
+        await write_import_log(
+            db, dosya_adi=file.filename or "", dosya_hash=file_hash,
+            ilce=ilce_adi or None, yil=final_yil,
+            kayit_sayisi=len(rows), silinen=silinen, sure_sn=sure,
+        )
+
+    await db.commit()
+    return {
+        "ok":          True,
+        "yil":         final_yil,
+        "ilce":        ilce_adi,
+        "eklenen":     eklenen,
+        "guncellenen": guncellenen,
+        "silinen":     silinen,
+        "sure_sn":     sure,
+    }
+
+
+# ── Yem Bitkileri Desteği ────────────────────────────────────────────
+
+@router.post("/yem-bitkileri")
+async def import_yem_bitkileri(
+    file:     UploadFile    = File(...),
+    yil:      Optional[str] = Form(None),
+    truncate: Optional[str] = Form("false"),
+    db:       AsyncSession  = Depends(get_db),
+):
+    """İCMAL-2 formatındaki Yem Bitkileri Desteği XLS dosyasını yükler."""
+    check_extension(file.filename or "", {"xls", "xlsx", "xlsm"})
+    content   = await file.read()
+    file_hash = sha256(content)
+    await _guard_duplicate(db, file_hash, file.filename or "")
+
+    final_yil          = yil_from(yil, file.filename or "")
+    rows, il_adi, ilce_adi, _toplam = parse_yem_bitkileri_xls(content, final_yil)
+    if not rows:
+        raise NoValidDataError()
+
+    t0 = time.perf_counter()
+    eklenen = guncellenen = silinen = 0
+
+    async with db.begin_nested():
+        if truncate != "false" and ilce_adi:
+            r = await db.execute(
+                text("DELETE FROM yem_bitkileri_destek WHERE yil = :y AND ilce = :i"),
+                {"y": final_yil, "i": ilce_adi},
+            )
+            silinen = r.rowcount
+        elif truncate != "false":
+            r = await db.execute(
+                text("DELETE FROM yem_bitkileri_destek WHERE yil = :y"), {"y": final_yil}
+            )
+            silinen = r.rowcount
+
+        for row in rows:
+            result = await db.execute(
+                text("""
+                    INSERT INTO yem_bitkileri_destek
+                        (yil, il, ilce, koy, urun, isletme_sayisi,
+                         destege_tabi_alan_da, su_kisiti_da, sut_havzasi_da,
+                         destek_tutari_tl, updated_at)
+                    VALUES
+                        (:yil, :il, :ilce, :koy, :urun, :isletme_sayisi,
+                         :destege_tabi_alan_da, :su_kisiti_da, :sut_havzasi_da,
+                         :destek_tutari_tl, NOW())
+                    ON CONFLICT (yil, ilce, koy, urun) DO UPDATE SET
+                        isletme_sayisi       = EXCLUDED.isletme_sayisi,
+                        destege_tabi_alan_da = EXCLUDED.destege_tabi_alan_da,
+                        su_kisiti_da         = EXCLUDED.su_kisiti_da,
+                        sut_havzasi_da       = EXCLUDED.sut_havzasi_da,
+                        destek_tutari_tl     = EXCLUDED.destek_tutari_tl,
+                        updated_at           = NOW()
+                """),
+                row,
+            )
+            if result.rowcount == 1: eklenen += 1
+            else: guncellenen += 1
+
+        sure = round(time.perf_counter() - t0, 2)
+        await write_import_log(db, dosya_adi=file.filename or "", dosya_hash=file_hash,
+                               ilce=ilce_adi or None, yil=final_yil,
+                               kayit_sayisi=len(rows), silinen=silinen, sure_sn=sure)
+
+    await db.commit()
+    return {"ok": True, "yil": final_yil, "ilce": ilce_adi,
+            "eklenen": eklenen, "guncellenen": guncellenen,
+            "silinen": silinen, "sure_sn": sure}
+
+
+# ── Zirai Don Desteği ────────────────────────────────────────────────
+
+@router.post("/zirai-don")
+async def import_zirai_don(
+    file:     UploadFile    = File(...),
+    yil:      Optional[str] = Form(None),
+    truncate: Optional[str] = Form("false"),
+    db:       AsyncSession  = Depends(get_db),
+):
+    """İCMAL-2 formatındaki Zirai Don Desteği XLS dosyasını yükler."""
+    check_extension(file.filename or "", {"xls", "xlsx", "xlsm"})
+    content   = await file.read()
+    file_hash = sha256(content)
+    await _guard_duplicate(db, file_hash, file.filename or "")
+
+    final_yil          = yil_from(yil, file.filename or "")
+    rows, il_adi, ilce_adi, _toplam = parse_zirai_don_xls(content, final_yil)
+    if not rows:
+        raise NoValidDataError()
+
+    t0 = time.perf_counter()
+    eklenen = guncellenen = silinen = 0
+
+    async with db.begin_nested():
+        if truncate != "false" and ilce_adi:
+            r = await db.execute(
+                text("DELETE FROM zirai_don_destek WHERE yil = :y AND ilce = :i"),
+                {"y": final_yil, "i": ilce_adi},
+            )
+            silinen = r.rowcount
+        elif truncate != "false":
+            r = await db.execute(
+                text("DELETE FROM zirai_don_destek WHERE yil = :y"), {"y": final_yil}
+            )
+            silinen = r.rowcount
+
+        for row in rows:
+            result = await db.execute(
+                text("""
+                    INSERT INTO zirai_don_destek
+                        (yil, il, ilce, koy, urun, isletme_sayisi,
+                         hasar_orani_yuzde, birim_maliyet_tl,
+                         etkilenen_alan_da, toplam_masraf_tl, updated_at)
+                    VALUES
+                        (:yil, :il, :ilce, :koy, :urun, :isletme_sayisi,
+                         :hasar_orani_yuzde, :birim_maliyet_tl,
+                         :etkilenen_alan_da, :toplam_masraf_tl, NOW())
+                    ON CONFLICT (yil, ilce, koy, urun) DO UPDATE SET
+                        isletme_sayisi    = EXCLUDED.isletme_sayisi,
+                        hasar_orani_yuzde = EXCLUDED.hasar_orani_yuzde,
+                        birim_maliyet_tl  = EXCLUDED.birim_maliyet_tl,
+                        etkilenen_alan_da = EXCLUDED.etkilenen_alan_da,
+                        toplam_masraf_tl  = EXCLUDED.toplam_masraf_tl,
+                        updated_at        = NOW()
+                """),
+                row,
+            )
+            if result.rowcount == 1: eklenen += 1
+            else: guncellenen += 1
+
+        sure = round(time.perf_counter() - t0, 2)
+        await write_import_log(db, dosya_adi=file.filename or "", dosya_hash=file_hash,
+                               ilce=ilce_adi or None, yil=final_yil,
+                               kayit_sayisi=len(rows), silinen=silinen, sure_sn=sure)
+
+    await db.commit()
+    return {"ok": True, "yil": final_yil, "ilce": ilce_adi,
+            "eklenen": eklenen, "guncellenen": guncellenen,
+            "silinen": silinen, "sure_sn": sure}

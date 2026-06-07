@@ -130,6 +130,58 @@ export interface SertifikaliFidanRow {
   destekleme_tutari_tl: number;
 }
 
+export interface ZiraiDonRow {
+  id: number; yil: number; il: string; ilce: string; koy: string; urun: string;
+  isletme_sayisi: number; hasar_orani_yuzde: number; birim_maliyet_tl: number;
+  etkilenen_alan_da: number; toplam_masraf_tl: number;
+}
+export interface ZiraiDonListResponse {
+  data: ZiraiDonRow[]; total: number; page: number; pages: number; limit: number;
+}
+export interface ZiraiDonImportResponse {
+  ok: boolean; yil: number; ilce: string;
+  eklenen: number; guncellenen: number; silinen: number; sure_sn: number;
+}
+
+export interface YemBitkileriRow {
+  id: number; yil: number; il: string; ilce: string; koy: string; urun: string;
+  isletme_sayisi: number; destege_tabi_alan_da: number;
+  su_kisiti_da: number; sut_havzasi_da: number; destek_tutari_tl: number;
+}
+export interface YemBitkileriListResponse {
+  data: YemBitkileriRow[]; total: number; page: number; pages: number; limit: number;
+}
+export interface YemBitkileriImportResponse {
+  ok: boolean; yil: number; ilce: string;
+  eklenen: number; guncellenen: number; silinen: number; sure_sn: number;
+}
+
+export interface TemelDestekRow {
+  id: number; yil: number; il: string; ilce: string; koy: string;
+  urun_grubu: string; isletme_sayisi: number;
+  destege_tabi_alan_da: number; destekleme_miktari_tl: number;
+}
+export interface TemelDestekListResponse {
+  data: TemelDestekRow[]; total: number; page: number; pages: number; limit: number;
+}
+export interface TemelDestekImportResponse {
+  ok: boolean; yil: number; ilce: string;
+  eklenen: number; guncellenen: number; silinen: number; sure_sn: number;
+}
+
+export interface SertifikaliTohumRow {
+  id: number; yil: number; il: string; ilce: string; koy: string;
+  urun: string; isletme_sayisi: number;
+  destekleme_alani_da: number; destekleme_miktari_tl: number;
+}
+export interface SertifikaliTohumListResponse {
+  data: SertifikaliTohumRow[]; total: number; page: number; pages: number; limit: number;
+}
+export interface SertifikaliTohumImportResponse {
+  ok: boolean; yil: number; ilce: string;
+  eklenen: number; guncellenen: number; silinen: number; sure_sn: number;
+}
+
 export interface SertifikaliFidanListResponse {
   data: SertifikaliFidanRow[];
   total: number;
@@ -545,4 +597,84 @@ export const api = {
       '/api/import/cks-sayisi', fd,
     );
   },
+  importSertifikaliTohum(file: File, yil: string, truncate = false): Promise<SertifikaliTohumImportResponse> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('yil', yil);
+    fd.append('truncate', String(truncate));
+    return postForm('/api/import/sertifikali-tohum', fd);
+  },
+
+  listSertifikaliTohum(params: { yil: number; ilce?: string; koy?: string; urun?: string; sort_by?: string; sort_dir?: string; page?: number; limit?: number }): Promise<SertifikaliTohumListResponse> {
+    return get('/api/sertifikali-tohum', params);
+  },
+
+  sertifikaliTohumOzet(params: { yil: number; ilce?: string; group_by?: string }): Promise<{ group_by: string; data: Record<string, unknown>[] }> {
+    return get('/api/sertifikali-tohum/ozet', params);
+  },
+
+  sertifikaliTohumToplam(params: { yil: number; ilce?: string }): Promise<Record<string, number>> {
+    return get('/api/sertifikali-tohum/toplam', params);
+  },
+
+  importTemelDestek(file: File, yil: string, truncate = false): Promise<TemelDestekImportResponse> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('yil', yil);
+    fd.append('truncate', String(truncate));
+    return postForm('/api/import/temel-destek', fd);
+  },
+
+  listTemelDestek(params: { yil: number; ilce?: string; koy?: string; urun_grubu?: string; sort_by?: string; sort_dir?: string; page?: number; limit?: number }): Promise<TemelDestekListResponse> {
+    return get('/api/temel-destek', params);
+  },
+
+  temelDestekOzet(params: { yil: number; ilce?: string; group_by?: string }): Promise<{ group_by: string; data: Record<string, unknown>[] }> {
+    return get('/api/temel-destek/ozet', params);
+  },
+
+  temelDestekToplam(params: { yil: number; ilce?: string }): Promise<Record<string, number>> {
+    return get('/api/temel-destek/toplam', params);
+  },
+
+  importYemBitkileri(file: File, yil: string, truncate = false): Promise<YemBitkileriImportResponse> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('yil', yil);
+    fd.append('truncate', String(truncate));
+    return postForm('/api/import/yem-bitkileri', fd);
+  },
+
+  listYemBitkileri(params: { yil: number; ilce?: string; koy?: string; urun?: string; sort_by?: string; sort_dir?: string; page?: number; limit?: number }): Promise<YemBitkileriListResponse> {
+    return get('/api/yem-bitkileri', params);
+  },
+
+  yemBitkileriOzet(params: { yil: number; ilce?: string; group_by?: string }): Promise<{ group_by: string; data: Record<string, unknown>[] }> {
+    return get('/api/yem-bitkileri/ozet', params);
+  },
+
+  yemBitkileriToplam(params: { yil: number; ilce?: string }): Promise<Record<string, number>> {
+    return get('/api/yem-bitkileri/toplam', params);
+  },
+
+  importZiraiDon(file: File, yil: string, truncate = false): Promise<ZiraiDonImportResponse> {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('yil', yil);
+    fd.append('truncate', String(truncate));
+    return postForm('/api/import/zirai-don', fd);
+  },
+
+  listZiraiDon(params: { yil: number; ilce?: string; koy?: string; urun?: string; sort_by?: string; sort_dir?: string; page?: number; limit?: number }): Promise<ZiraiDonListResponse> {
+    return get('/api/zirai-don', params);
+  },
+
+  ziraiDonOzet(params: { yil: number; ilce?: string; group_by?: string }): Promise<{ group_by: string; data: Record<string, unknown>[] }> {
+    return get('/api/zirai-don/ozet', params);
+  },
+
+  ziraiDonToplam(params: { yil: number; ilce?: string }): Promise<Record<string, number>> {
+    return get('/api/zirai-don/toplam', params);
+  },
+
 };

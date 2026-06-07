@@ -40,6 +40,10 @@ export const MODULES: Module[] = [
       { icon: "🌿", label: "Bitkisel Destekler",     pageId: "p-bitkisel-dest" },
       { icon: "📋", label: "Planlı Üretim Desteği",        pageId: "p-planli-uretim" },
       { icon: "🌱", label: "Sertifikalı Fidan Desteği",    pageId: "p-sertifikali-fidan" },
+      { icon: "🌾", label: "Sertifikalı Tohum Desteği",    pageId: "p-sertifikali-tohum" },
+      { icon: "🌱", label: "Temel Destek",                     pageId: "p-temel-destek" },
+      { icon: "🌿", label: "Yem Bitkileri Desteği",            pageId: "p-yem-bitkileri" },
+      { icon: "❄️", label: "Zirai Don Desteği",                 pageId: "p-zirai-don" },
     ],
   },
   {
